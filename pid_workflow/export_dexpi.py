@@ -490,11 +490,44 @@ class Exporter:
         self.rep.bump("piping_network_segments", len(self.segments))
         model = pc.DexpiModel(conceptualModel=conceptual, originatingSystemName="pid_workflow", originatingSystemVendorName="P-ID project",
                               originatingSystemVersion="0.1.0",
-                              exportDateTime=datetime.now(timezone.utc))
+                              exportDateTime=_export_time())
         self._instrumentation(model)
+        self._stable_ids(model)
         self._limitations()
         return ExportResult(model=model, report=self.rep, expected_edges=self.expected_edges,
                             segment_lines={seg.id: [l.id for l in lines] for seg, lines, _ in self.segments})
+
+    def _stable_ids(self, model: pc.DexpiModel) -> None:
+        """Give every object a deterministic Proteus ID so that re-exports are identical and diff-friendly.
+
+        IDs are ``<Class>-<topology id>`` where the object carries one, otherwise ``<Class>-<counter>``
+        (traversal order is deterministic).
+        """
+        import re
+
+        from pydexpi.dexpi_classes.pydantic_classes import DexpiBaseModel
+        from pydexpi.toolkits import model_toolkit as mt
+
+        seen: set[str] = set()
+        counters: dict[str, int] = {}
+        for obj in mt.get_all_instances_in_model(model.conceptualModel, None):
+            if not isinstance(obj, DexpiBaseModel) or getattr(obj, "proteusId", None):
+                continue
+            cls = type(obj).__name__
+            attrs = {a.attributeName: a.value for a in (getattr(obj, "customAttributes", None) or []) if hasattr(a, "attributeName")}
+            base = attrs.get(TOPO_ID_ATTR)
+            if base and "TeeIndex" in attrs:
+                base = f"{base}.tee{attrs['TeeIndex']}"
+            if base:
+                pid = f"{cls}-{re.sub(r'[^A-Za-z0-9_.-]', '_', base)}"
+            else:
+                counters[cls] = counters.get(cls, 0) + 1
+                pid = f"{cls}-{counters[cls]:05d}"
+            while pid in seen:
+                counters[cls] = counters.get(cls, 0) + 1
+                pid = f"{pid}_{counters[cls]}"
+            seen.add(pid)
+            obj.proteusId = pid
 
     def _limitations(self) -> None:
         r = self.rep
@@ -515,6 +548,14 @@ class Exporter:
             "The Proteus XML schema (XSD) is not available offline, so the file is not schema-validated; it is proven to load with pyDEXPI's own parser and "
             "its graph is compared with the topology (see the round-trip report). Validate it in the target CAD tool before relying on it.",
         ]
+
+
+def _export_time() -> datetime:
+    """Export timestamp; honours SOURCE_DATE_EPOCH so that exports can be made byte-reproducible."""
+    import os
+
+    epoch = os.environ.get("SOURCE_DATE_EPOCH")
+    return datetime.fromtimestamp(int(epoch), timezone.utc) if epoch else datetime.now(timezone.utc)
 
 
 class _Prov:

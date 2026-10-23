@@ -35,6 +35,7 @@ Python does everything structural.
 ```bash
 pip install -e ".[dev]"            # pydexpi, pydantic, reportlab, lxml, networkx, pyyaml
 pid run projects/lpf_bsst          # enrich → validate → export → verify → lay out → PDF → reports
+                                   # (set SOURCE_DATE_EPOCH for a byte-reproducible XML)
 pytest                             # 42 tests, including a second, unrelated project
 ```
 

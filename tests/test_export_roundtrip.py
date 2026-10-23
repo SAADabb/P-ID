@@ -92,3 +92,14 @@ def test_export_limitations_are_reported(exported):
     _, res, _ = exported
     text = " ".join(res.report.limitations)
     assert "LifeCyclePhase" in text and "CustomEquipment" in text and "nozzle" in text.lower()
+
+
+def test_export_is_reproducible_and_ids_are_traceable(enriched, tmp_path, monkeypatch):
+    topo, _ = enriched
+    monkeypatch.setenv("SOURCE_DATE_EPOCH", "1760000000")
+    a, b = tmp_path / "a.xml", tmp_path / "b.xml"
+    export_topology(topo, a)
+    export_topology(topo, b)
+    assert a.read_bytes() == b.read_bytes()
+    xml = a.read_text(encoding="utf-8")
+    assert 'ID="CentrifugalPump-eq.well_pump_a"' in xml and 'ID="PipeTee-mf.wp_s.tee1"' in xml
