@@ -19,22 +19,23 @@ Two principles run through everything, because a P&ID is used to build and opera
 
 ```bash
 SKILL=<directory of this SKILL.md>
-python -c "import pydexpi, reportlab, pypdf, lxml, openpyxl, yaml, pydantic" 2>/dev/null \
+python3 -c "import pydexpi, reportlab, pypdf, lxml, openpyxl, yaml, pydantic" 2>/dev/null \
   || pip install pydexpi reportlab pypdf lxml openpyxl pyyaml pydantic networkx
-export PYTHONPATH="$SKILL/scripts/engine:$PYTHONPATH"     # no install needed
-alias pid="python -m pid_workflow.cli"
 ```
-Work in the user's directory: projects are created under `./projects/<name>/`. Poppler (`pdftoppm`) is used to look at
-drawings; if it is missing, render with `python -c "import fitz"` (PyMuPDF) or ask the user.
+Every command below goes through the wrapper `bash "$SKILL/scripts/pid"`, which puts the bundled engine on the Python path
+by itself (nothing to install or export; shells may be fresh each time). Work in the user's directory: projects are
+created under `./projects/<name>/`. `pdftoppm` (poppler) is used to look at the drawings.
 
 ## 1. Create the project
 
 ```bash
-pid new <name> "<path/to/spec.pdf>"         # lowercase name, e.g. pid new usine_nord cdc.pdf
+bash "$SKILL/scripts/pid" new <name> "<path/to/spec.pdf>"     # lowercase name, e.g. ... new usine_nord cdc.pdf
 ```
 It copies the document, splits it into `projects/<name>/source/pages/page_NNN.txt` and writes `project.yaml`,
 `project_rules.yaml` (includes the good-practice rule pack), `review_plan.yaml`, `layout_hints.yaml` and
 `extraction/extract_<name>.py`. A scanned PDF without a text layer must be OCR'd first (`pid check` says so).
+Pages: PDF pages; a text file is split at form feeds or `--- page N ---` lines (otherwise it is one page) - quotes
+cite these page numbers.
 
 ## 2. Read everything, then plan
 
@@ -52,7 +53,7 @@ Edit `projects/<name>/extraction/extract_<name>.py`; the API is in `references/e
 `s.equipment` (any pyDEXPI class, or `CustomEquipment` + `symbol=`), `s.bank` (parallel units with headers),
 `s.manifold`, `s.line` / `s.run` (in flow direction, with stated `props`), `s.valve`, `s.boundary`, `s.control`,
 `s.mode`, `s.unresolved`, `s.save()`. Run it until it writes `source_topology.json`:
-`python projects/<name>/extraction/extract_<name>.py`.
+`bash "$SKILL/scripts/pid" py projects/<name>/extraction/extract_<name>.py`.
 
 ## 4. Choose the rules (`project_rules.yaml`)
 
@@ -70,20 +71,26 @@ saying why); give the document's fluid codes for line numbering. Details: `refer
   which is usually worse - write it.
 * `review_plan.yaml`, after the first run: put **every** open point either in `holds` (a decision that can change the
   drawing: `title`, `drawn_as` = what the drawing shows today, `answer: null`) or in `datasheet` (missing values
-  only), and write the general `notes`. The engineer then reviews a handful of decisions instead of every object.
+  only), and write the general `notes`. "Every" includes the points the engine generates (`ur.gen.valve_technology`,
+  `ur.gen.fail_position`, `ur.gen.instrument_ranges`, `ur.gen.relief`, `ur.gen.nozzles`): list their ids with
+  `grep -o '"ur\.gen\.[a-z_]*"' projects/<name>/working_topology.json | sort -u`. Without a plan the engine sorts
+  by category (`missing_value` → datasheet, everything else → hold) and `pid check` warns; your plan always takes
+  precedence. The engineer then reviews a handful of decisions instead of every object.
 
 ## 6. Run, check, look - and iterate
 
 ```bash
-pid check projects/<name>      # verbatim quotes, structure, triage - every problem with its fix
-pid run projects/<name>        # P&ID + PFD + DEXPI + lists + reports   (--rebuild after changing the extraction)
-pid pfd projects/<name>        # PFD only
+bash "$SKILL/scripts/pid" check projects/<name>   # verbatim quotes, structure, triage - every problem with its fix
+bash "$SKILL/scripts/pid" run projects/<name>     # P&ID + PFD + DEXPI + lists + reports  (--rebuild after changing the extraction)
+bash "$SKILL/scripts/pid" pfd projects/<name>     # PFD only
 ```
 Done means: extraction check 0 errors, validation PASS, round trip PASS, idempotent=True and **0 geometric problems
-on both one-sheet drawings**. Then look at the drawings yourself - the checks cannot judge readability:
-`pdftoppm -r 45 -png projects/<name>/output/pid_one_sheet_A0.pdf /tmp/pid` for the whole sheet and
-`-r 120 -x … -y … -W 1600 -H 1000` to zoom on every area; same for `pfd_one_sheet_A0.pdf`. Fix crowding, long detours or
-confusing areas through `layout_hints.yaml` or the extraction, never with coordinates.
+on both one-sheet drawings**. Then look at the drawings yourself - the checks cannot judge readability.
+Whole sheet: `pdftoppm -r 45 -png -singlefile projects/<name>/output/pid_one_sheet_A0.pdf /tmp/pid`.
+Zoom: an A0 page is 46.8 × 33.1 in, so at `-r 120` it is 5616 × 3972 px; crop with
+`pdftoppm -r 120 -x X -y Y -W 1600 -H 1000 -singlefile … /tmp/zoom` (X, Y in pixels from the top-left, at that
+resolution). Look at every plant area of both sheets; read the PFD stream table from `output/pfd_stream_table.xlsx`.
+Fix crowding, long detours or confusing areas through `layout_hints.yaml` or the extraction, never with coordinates.
 
 The PFD comes from the same extraction (no extra work): major equipment, parallel units drawn once, numbered streams,
 stream table, equipment summary. It is only as good as the stream data you recorded - put stated temperatures,

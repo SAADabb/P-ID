@@ -19,16 +19,17 @@
 ## Review commands
 
 ```bash
-pid review projects/<name> --list                         # pending proposals
-pid review projects/<name> --approve-rule pump.auxiliaries
-pid review projects/<name> --reject pc.gen.p101.suction_strainer   # removed, line restored, never re-proposed
-pid run projects/<name>                                    # redraw
+bash "$SKILL/scripts/pid" review projects/<name> --list                         # pending proposals
+bash "$SKILL/scripts/pid" review projects/<name> --approve-rule pump.auxiliaries
+bash "$SKILL/scripts/pid" review projects/<name> --reject pc.gen.p101.suction_strainer   # removed, line restored, never re-proposed
+bash "$SKILL/scripts/pid" run projects/<name>                                    # redraw
 ```
 Holds are answered in `review_plan.yaml` (`answer:`); the marker disappears and the answer stays in the register.
 
 ## PFD conventions used
 
-Source topology only (no P&ID rule additions); valves spliced out except control valves (which separate streams);
+Source topology only (no P&ID rule additions - so rule-added relief valves, drains, vents and instruments appear on the
+P&ID only); valves spliced out except control valves (which separate streams);
 identical units collapsed; streams numbered depth-first from each inlet; stream table rows: service, from, to,
 temperature, pressure, flow, size - only stated values (`≤/≥` limits, `*` = stated for the connected equipment,
 `see n` = same stated value as stream n); stated control actions with a measurement drawn as their controller with the

@@ -505,8 +505,8 @@ def _legend(rec: Recorder, st: Style, x0: float, x1: float, y: float, os_: OneSh
         rec.drawString(cx + 32, cy, lb)
     y -= ((len(services) + 1) // 2) * 13 + 8
     # symbol samples (drawn in a local y-down space like the drawing itself)
-    samples = [
-        ("control", "Control valve"),
+    has_cv = any(sym.function == "control" for e in os_.layout.edges for sym, *_ in e.symbols)
+    samples = ([("control", "Control valve")] if has_cv else []) + [
         ("pump", "Pump (parallel units drawn once)"),
         ("diamond", "Stream number – see stream table"),
         ("future", "Future equipment (LifeCyclePhase = Future)"),

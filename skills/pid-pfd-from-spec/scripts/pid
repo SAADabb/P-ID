@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Run the bundled engine without installing it or exporting anything:
+#   scripts/pid new <name> <spec>     scripts/pid check|run|pfd|review projects/<name>
+#   scripts/pid py <script.py>        run a Python script (e.g. the extraction) with the engine importable
+set -eu
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PYTHONPATH="$HERE/engine${PYTHONPATH:+:$PYTHONPATH}"
+PY="${PYTHON:-python3}"
+if [ "${1:-}" = "py" ]; then
+  shift
+  exec "$PY" "$@"
+fi
+exec "$PY" -m pid_workflow.cli "$@"

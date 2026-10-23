@@ -97,7 +97,7 @@ def run_pfd(project: str | Path) -> PFDResult:
     md = ["# Process flow diagram", "", f"Derived from `source_topology.json` (no P&ID rules). Streams: {len(pfd.streams)}; "
           f"equipment symbols: {len(t.equipment)}; parallel banks drawn once: {len(pfd.banks)}; geometric problems: {len(qa)}; "
           f"DEXPI round trip: {'PASS' if rt.ok and g_ok else 'FAIL'}.", "",
-          "Left out (P&ID detail): " + ", ".join(f"{n} {k}" for k, n in sorted(pfd.dropped.items()) if n) + ".", "",
+          "Left out (P&ID detail): " + (", ".join(f"{n} {k}" for k, n in sorted(pfd.dropped.items()) if n) or "nothing") + ".", "",
           "## Banks", ""] + [f"- {b.rep}: {', '.join(b.members)}" for b in pfd.banks] + ["", "## Streams", "",
           "| No. | Service | From | To | Temperature | Pressure | Flow |", "|---|---|---|---|---|---|---|"]
     for s_ in pfd.streams:
@@ -123,8 +123,8 @@ class Project:
     cfg: dict[str, Any]
 
     def p(self, key: str) -> Path:
-        path = (self.root / self.cfg[key]).resolve()
-        if key in _BUNDLED and not path.exists():  # project outside the repository: use the policies shipped with the engine
+        path = (self.root / str(self.cfg[key])).resolve()
+        if key in _BUNDLED and (self.cfg[key] == "bundled" or not path.exists()):  # project outside the repository: use the policies shipped with the engine
             path = BUNDLED_POLICIES / _BUNDLED[key]
         return path
 

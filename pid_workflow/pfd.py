@@ -435,7 +435,8 @@ def _equipment_summary(t: Topology) -> list[tuple[str, str, str]]:
     skip = {"label", "members"}
     rows = []
     for e in sorted(t.equipment, key=lambda x: (x.tag or "~", x.id)):
-        data = [f"{k.replace('_', ' ')} {_fmt(a)}" for k, a in e.attributes.items() if k not in skip and a.value not in (None, "", False)]
+        data = [f"{k.replace('_', ' ')} {_fmt(a)}" for k, a in e.attributes.items()
+                if k not in skip and a.value not in (None, "", False) and str(a.value) not in (e.name or "")]
         data = [d.replace(" True", "") for d in data]
         rows.append((e.tag or "–", e.name or e.id, "; ".join(data)))
     return rows

@@ -2,7 +2,7 @@
 
 Rules complete the P&ID with what a drafting office adds: valves around equipment, drains and vents, instruments,
 tags, line numbers. Everything a rule adds is a **proposal** (`pending_review`) with its rule, trigger and explanation;
-an engineer approves rules as a whole (`pid review projects/<name> --approve-rule <id>`) or rejects single objects.
+an engineer approves rules as a whole (`bash "$SKILL/scripts/pid" review projects/<name> --approve-rule <id>`) or rejects single objects.
 Rules are idempotent and never duplicate what the document already shows.
 
 ```yaml
@@ -18,6 +18,10 @@ rules:
     params: {...}
   - {id: control_valve.manifold, enabled: false}    # say why in a comment
 ```
+
+**When the document asks for only part of a pack rule** (e.g. pump valves and strainer, but no pressure gauge):
+override the rule with the stated part and its citation, and move the rest into a separate rule with its own id and
+no `source.page` (e.g. `pump.pressure_gauge`), so nothing unstated is attributed to the document.
 
 A rule with `source.page` is cited as a requirement of the document; a pack rule without one says in every
 explanation "good-practice pack – not stated in the specification". Override pack rules the document confirms, adapt

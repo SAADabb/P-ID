@@ -38,8 +38,8 @@ def new_project(name: str, spec: str | Path, repo: str | Path = ".", language: s
         "rules": "project_rules.yaml",
         "layout_hints": "layout_hints.yaml",
         "review_plan": "review_plan.yaml",
-        "generic_policy": "../../policies/generic.yaml",
-        "rendering": "../../policies/rendering.yaml",
+        "generic_policy": "../../policies/generic.yaml" if (repo / "policies" / "generic.yaml").exists() else "bundled",
+        "rendering": "../../policies/rendering.yaml" if (repo / "policies" / "rendering.yaml").exists() else "bundled",
         "output_dir": "output",
         "reports_dir": "reports",
     }, sort_keys=False, allow_unicode=True), encoding="utf-8")
@@ -50,7 +50,7 @@ def new_project(name: str, spec: str | Path, repo: str | Path = ".", language: s
 #   - {{id: pump.auxiliaries, enabled: false}}
 project: {name}
 document: "{spec.name}"
-language: en
+language: en             # language of the drawings' generated texts (the document language is in the extraction)
 include: [process_good_practice]
 
 overrides: {{}}          # e.g. line_numbering: {{codes: [{{prefix: "Chilled water", code: "CHW"}}]}}

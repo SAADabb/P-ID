@@ -32,11 +32,17 @@ agents and a process-engineering review. Read them before extracting.
 * **3-way valves** are not modelled as such: draw a control valve on the by-pass/mixing branch with `s.interp` and an
   open point; the rule pack's control-valve station should then be switched off for it.
 
+* **Thin specifications** (few or no temperatures, pressures, flows): the stream table will be mostly blank - that is
+  correct; say so to the user and list what is needed (heat and mass balance data) instead of filling cells. A stated
+  pump flow is carried to its discharge stream (marked `*`); do not propagate it further.
+
 ## Modelling
 
 * Parallel identical units (duty/stand-by pumps, 3 × 50 % exchangers, identical heat pumps) → build them with
   `s.bank` or with split/merge manifolds on every connected side. The P&ID shows every unit with its auxiliaries; the
   PFD draws them once ("P-201/202/203 (3 units)").
+* Duty/stand-by or capacity arrangements ("2 + 1", "3 × 50 %") go in an equipment attribute `configuration`
+  (shown in the PFD bank name and the equipment summary).
 * Keep unit names free of tags and numbering ("Primary chilled-water pump", tag "P-101") - names become labels.
 * Give `header=True` only to real headers/collectors: the header-instrumentation rule puts a PT/TT set on each one.
 * Record stated temperatures/pressures/flows/sizes on lines, duties and regimes on equipment: the stream table and the

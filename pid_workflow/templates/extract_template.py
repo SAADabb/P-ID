@@ -13,7 +13,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # repo root, so no install is needed
+_repo = Path(__file__).resolve().parents[3]
+if (_repo / "pid_workflow").is_dir():  # inside the repository: no install needed (elsewhere: PYTHONPATH / scripts/pid)
+    sys.path.insert(0, str(_repo))
 
 from pid_workflow.extract_kit import Spec  # noqa: E402
 
