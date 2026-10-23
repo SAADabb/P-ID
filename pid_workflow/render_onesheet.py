@@ -68,6 +68,10 @@ class SheetContent:
     tbd: list[str]                    # data to be completed on datasheets (not drawn as holds)
     line_labels: dict[str, str]       # topology line id -> label shown on the drawing
     revision: list[tuple[str, str, str]]  # rev, date, description
+    kind: str = "pid"                 # pid | pfd
+    stream_table: list[list[str]] | None = None   # PFD: rows (first cell = row title), one column per stream
+    equipment_summary: list[tuple[str, str, str]] | None = None  # PFD: tag, description, key data
+    _labelled: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -93,6 +97,8 @@ def draw_onesheet(topo: Topology, os_: OneSheet, st: Style, content: SheetConten
     W, H = A0
     _border(rec, topo)
     x0, y0, x1, y1 = _field_box()
+    if content.stream_table:
+        y0 = _stream_table(rec, content.stream_table, x0, y0, x1) + 14
     bx0, by0, bx1, by1 = os_.layout.bbox
     s = min((x1 - x0) / (bx1 - bx0), (y1 - y0) / (by1 - by0))
     ox = x0 + ((x1 - x0) - (bx1 - bx0) * s) / 2 - bx0 * s
@@ -277,6 +283,52 @@ def _content(rec: Recorder, painter: SheetPainter, os_: OneSheet, st: Style, con
             _hold_marker(rec, n.x + n.w / 2 + 4 + k * 26, n.y - n.h / 2 - 8, h.num)
 
 
+def _diamond(rec: Recorder, x: float, y: float, lab: str, col: Any) -> None:
+    """PFD stream number: a diamond on the line (layout coordinates, y down)."""
+    r = 8.5 if len(lab) < 3 else 10.5
+    rec.saveState()
+    rec.setStrokeColor(col)
+    rec.setFillColor(colors.white)
+    rec.setLineWidth(1.0)
+    poly(rec, [(x - r, y), (x, y - r), (x + r, y), (x, y + r)], close=True, fill=True)
+    rec.restoreState()
+    txt(rec, x, y + 2.6, lab, 7.0, FONT_B, "c", INK)
+
+
+def _stream_table(rec: Recorder, rows: list[list[str]], x0: float, y0: float, x1: float) -> float:
+    """Stream table across the bottom of the drawing field (sheet coordinates, y up); returns its top."""
+    rec.owner = Owner("sheet", "stream_table", "border")
+    head_w, rh, fs = 64.0, 10.5, 5.6
+    n = len(rows[0]) - 1
+    per_band = max(1, int((x1 - x0 - head_w) // 46))
+    bands = [(i, min(n, i + per_band)) for i in range(0, n, per_band)]
+    cw = (x1 - x0 - head_w) / per_band
+    y = y0
+    for a, b in reversed(bands):
+        h = rh * len(rows)
+        rec.setStrokeColor(INK)
+        rec.setLineWidth(0.5)
+        rec.rect(x0, y, head_w + cw * (b - a), h)
+        for r, row in enumerate(rows):
+            yy = y + h - rh * (r + 1)
+            rec.line(x0, yy, x0 + head_w + cw * (b - a), yy)
+            rec.setFillColor(INK)
+            rec.setFont(FONT_B, fs)
+            rec.drawString(x0 + 3, yy + 3.2, row[0])
+            for k in range(a, b):
+                cx = x0 + head_w + cw * (k - a)
+                if r == 0:
+                    rec.line(cx, y, cx, y + h)
+                val = row[k + 1]
+                rec.setFont(FONT_B if r == 0 else FONT, fs)
+                for ln in wrap(val, cw - 4, fs, FONT, 1):
+                    rec.drawCentredString(cx + cw / 2, yy + 3.2, ln)
+        y += h + 6
+    rec.setFont(FONT_B, 8)
+    rec.drawString(x0, y + 2, "STREAM TABLE – values as stated in the specification (* carried over from equipment data); blank = not given")
+    return y + 12
+
+
 def _hold_marker(rec: Recorder, x: float, y: float, num: int) -> None:
     """Hexagon with 'H n' (layout coordinates, y down)."""
     rec.saveState()
@@ -328,7 +380,13 @@ def _edge(rec: Recorder, painter: SheetPainter, e: MEdge, st: Style, content: Sh
                 lo, hi = sorted((xa, xb))
                 if not any(lo - 12 < sx < hi + 12 and abs(sy - ya) < 1 for _, sx, sy, _ in e.symbols):
                     runs.append((hi - lo, (lo + hi) / 2, ya))
-        if runs:
+        if runs and content.kind == "pfd":
+            if lab not in content._labelled:  # one diamond per stream
+                content._labelled.add(lab)
+                _, xm, ym = max(runs)
+                rec.owner = Owner("line", e.id, "label")
+                _diamond(rec, xm, ym, lab, col)
+        elif runs:
             _, xm, ym = max(runs)
             txt(rec, xm, ym - 4.5, lab, 6.4, FONT, "c", col)
     rec.owner = owner
@@ -343,11 +401,28 @@ def _panel(rec: Recorder, topo: Topology, st: Style, content: SheetContent, os_:
     bottom = M_O + GRID_W
     rec.owner = Owner("sheet", "panel", "border")
     y = top - 8
+    _legend.pfd = content.kind == "pfd"  # type: ignore[attr-defined]
     y = _legend(rec, st, px0, px1, y, os_)
     y = _notes(rec, "GENERAL NOTES", content.notes, px0, px1, y, numbered=True)
+    if content.equipment_summary:
+        y = _equipment_summary(rec, content.equipment_summary, px0, px1, y)
     y = _holds(rec, content.holds, px0, px1, y)
     y = _notes(rec, "DATA TO BE COMPLETED ON DATASHEETS (NOT HOLDS)", content.tbd, px0, px1, y, numbered=False)
     _title_block(rec, topo, content, px0, px1, bottom)
+
+
+def _equipment_summary(rec: Recorder, rows: list[tuple[str, str, str]], x0: float, x1: float, y: float) -> float:
+    y = _heading(rec, "EQUIPMENT SUMMARY", x0, x1, y)
+    for tag, name, data in rows:
+        rec.setFillColor(INK)
+        rec.setFont(FONT_B, 6.8)
+        rec.drawString(x0 + 8, y, tag[:22])
+        rec.setFont(FONT, 6.6)
+        lines = wrap(name + (f" – {data}" if data else ""), x1 - x0 - 100, 6.6, FONT, 2)
+        for j, ln in enumerate(lines):
+            rec.drawString(x0 + 92, y - j * 8.0, ln)
+        y -= len(lines) * 8.0 + 2
+    return y - 6
 
 
 def _heading(rec: Recorder, s: str, x0: float, x1: float, y: float) -> float:
@@ -383,6 +458,12 @@ def _legend(rec: Recorder, st: Style, x0: float, x1: float, y: float, os_: OneSh
     y -= ((len(services) + 1) // 2) * 13 + 8
     # symbol samples (drawn in a local y-down space like the drawing itself)
     samples = [
+        ("control", "Control valve"),
+        ("pump", "Pump (parallel units drawn once)"),
+        ("diamond", "Stream number – see stream table"),
+        ("future", "Future equipment (LifeCyclePhase = Future)"),
+        ("hold", "HOLD – decision needed, see hold list"),
+    ] if getattr(_legend, "pfd", False) else [
         ("valve", "Isolation valve, technology to be selected (generic)"),
         ("check", "Check valve"),
         ("globe", "Globe valve (by-pass)"),
@@ -428,6 +509,8 @@ def _legend(rec: Recorder, st: Style, x0: float, x1: float, y: float, os_: OneSh
             rec.rect(-12, -7, 24, 14)
         elif k == "hold":
             _hold_marker(rec, 0, 0, 1)
+        elif k == "diamond":
+            _diamond(rec, 0, 0, "7", INK)
         elif k == "signal":
             rec.setStrokeColor(colors.HexColor("#2a5db0"))
             rec.setDash(3, 2)
@@ -509,7 +592,8 @@ def _title_block(rec: Recorder, topo: Topology, content: SheetContent, x0: float
     rows = [
         ("PROJECT", md.project, 11.0),
         ("TITLE", md.title, 12.0),
-        ("CONTENT", "Piping & instrumentation diagram – complete scope on one sheet", 8.5),
+        ("CONTENT", "Process flow diagram – complete scope on one sheet" if content.kind == "pfd"
+         else "Piping & instrumentation diagram – complete scope on one sheet", 8.5),
     ]
     yy = bottom + h
     for lb, val, sz in rows:

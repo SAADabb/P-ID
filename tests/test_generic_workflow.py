@@ -102,3 +102,25 @@ def test_unknown_service_gets_a_colour_and_a_line_number(repo: Path):
     res = run_all(root, render=False)
     nums = {ln.line_number for ln in res.topology.process_lines if ln.service == "Eau traitée"}
     assert nums and all(n and n.startswith("ET-") for n in nums)
+
+
+def test_pfd_from_the_same_extraction(repo: Path):
+    from pid_workflow.pipeline import run_pfd
+
+    root = new_project("station", repo / "spec.txt", repo=repo)
+    s = Spec(root / "extraction" / "extract_station.py", drawing_id="PID-ST-001", title="Station – draft P&ID", project="Station")
+    _extraction(s)
+    s.save()
+    r = run_pfd(root)
+    t = r.pfd.topo
+    assert r.roundtrip_ok and r.qa == []
+    # P&ID detail is not on the PFD: no auxiliaries, no instruments; parallel pumps drawn once
+    assert not [c for c in t.components if c.kind in ("strainer", "check_valve", "relief")] and not t.instruments
+    assert len(r.pfd.banks) == 1 and r.pfd.banks[0].members == ["eq.p11", "eq.p12"]
+    pump = next(e for e in t.equipment if e.id == "eq.p11")
+    assert pump.tag == "P-11/12" and "2 units" in pump.name
+    # streams: tank -> pumps -> vessel -> network, numbered in flow order, pump flow carried over (marked)
+    assert [(x.frm, x.to) for x in r.pfd.streams] == [("T-10", "P-11/12"), ("P-11/12", "B-20"), ("B-20", "Plant network")]
+    assert r.pfd.streams[1].values["Flow"].startswith("40 m3/h") and "Flow" in r.pfd.streams[1].derived
+    assert t.metadata.drawing_id == "PFD-ST-001" and "PFD" in t.metadata.title
+    assert all(f.exists() for f in r.files)

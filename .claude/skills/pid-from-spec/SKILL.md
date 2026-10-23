@@ -1,6 +1,6 @@
 ---
 name: pid-from-spec
-description: Turn an engineering specification / cahier des charges (PDF or text) into a draft P&ID - one A0 sheet, DEXPI Proteus XML with graphics, engineering lists and a decision register. Use whenever the user gives a specification and asks for a P&ID, or asks to process, extract, re-run or review a project under projects/.
+description: Turn an engineering specification / cahier des charges (PDF or text) into a draft P&ID and PFD - one A0 sheet each, DEXPI Proteus XML with graphics, stream table, engineering lists and a decision register. Use whenever the user gives a specification and asks for a P&ID or a PFD (process flow diagram), or asks to process, extract, re-run or review a project under projects/.
 ---
 
 # Draft P&ID from a specification
@@ -94,9 +94,19 @@ Then **look at the drawing**: `pdftoppm -r 45 -png output/pid_one_sheet_A0.pdf /
 (`-r 120 -x … -y … -W 1600 -H 1000`) on every area. Fix crowding or detours with `layout_hints.yaml` (areas, rows) or the extraction,
 never with coordinates. Re-run after every change (`--rebuild` after changing the extraction).
 
+## 6b. PFD (process flow diagram)
+
+`pid run` also writes the PFD; `pid pfd projects/<name>` makes only the PFD. It uses the **same extraction**, without the P&ID rules:
+major equipment and process streams, identical parallel units drawn once (`P-201/202/203 (3 units)`), control valves the document
+names, numbered streams with a stream table (service, from, to, temperature, pressure, flow as stated; `*` = carried over from
+equipment data such as pump design flow) and an equipment summary. A good PFD therefore needs: parallel units built with `s.bank`,
+stream temperatures/pressures/flows recorded as line `props` when the document gives them, and duty data as equipment `attrs`.
+Look at `output/pfd_one_sheet_A0.pdf` like the P&ID (0 geometric problems, readable stream table).
+
 ## 7. Report to the user
 
 Outputs: `output/pid_one_sheet_A0.pdf` (the P&ID), `output/pid_draft.proteus.xml` (DEXPI with graphics),
+`output/pfd_one_sheet_A0.pdf` + `output/pfd_stream_table.xlsx` + `output/pfd.proteus.xml` (the PFD),
 `output/engineering_lists.xlsx`, `reports/decision_register.md`, `reports/summary.md`. Tell the user: what was extracted, the
 interpretations you made, the holds, what the rules added (all pending review), and the limits in `reports/export_limitations.md`.
 Never claim engineering approval.

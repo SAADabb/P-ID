@@ -26,6 +26,83 @@ from .topology_io import dumps_topology, load_topology, save_topology, sha256_fi
 from .validate import ValidationReport, render_markdown as validation_md, validate
 
 
+@dataclass
+class PFDResult:
+    pfd: Any
+    qa: list[str]
+    scale: float
+    roundtrip_ok: bool
+    files: list[Path]
+
+
+def run_pfd(project: str | Path) -> PFDResult:
+    """PFD from the source topology (no P&ID rules): A0 sheet, stream table, equipment summary, DEXPI with graphics."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+
+    from .pfd import STREAM_ROWS, build_pfd, stream_labels
+
+    proj = load_project(project)
+    source = load_topology(proj.p("source_topology"))
+    pfd = build_pfd(source)
+    t = pfd.topo
+    reg = build_register(t, load_plan(proj.plan_path))
+    content = sheet_content(t, reg)
+    content.kind = "pfd"
+    content.line_labels = stream_labels(pfd)
+    content.tbd = []
+    content.equipment_summary = pfd.equipment_summary
+    content.notes = [
+        "Process flow diagram derived from the same extraction as the P&ID: major equipment and process streams only; "
+        "isolation, check, drain and vent valves, strainers and local instruments are on the P&ID.",
+        "Identical parallel units are drawn once; their tags and number are given on the symbol.",
+        "Stream data are those stated in the specification; '*' = carried over from equipment data (e.g. pump design flow). "
+        "Blank = not given, not assumed.",
+    ] + [n for n in content.notes if "Orange" not in n and "Line numbers" not in n]
+    rows = [["Stream"] + [str(s_.no) for s_ in pfd.streams]]
+    for r in STREAM_ROWS:
+        rows.append([r] + [s_.values.get(r, "") + ("*" if r in s_.derived else "") for s_ in pfd.streams])
+    content.stream_table = rows
+    hints = _hints(proj)
+    os_ = build_onesheet(t, hints)
+    qa = onesheet_qa(os_)
+    drawing = draw_onesheet(t, os_, Style(proj.p("rendering")), content)
+    pdf_path = proj.out / "pfd_one_sheet_A0.pdf"
+    save_onesheet_pdf(drawing, t, pdf_path)
+    xml_path = proj.out / "pfd.proteus.xml"
+    export_topology(t, xml_path)
+    gstats = add_graphics(xml_path, drawing, os_, t, None)
+    rt = verify_roundtrip(t, xml_path)
+    g_ok = all(ok for _, ok, _ in verify_graphics(xml_path, gstats))
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Stream table"
+    for r in rows:
+        ws.append(r)
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="2B2B2B")
+    ws2 = wb.create_sheet("Equipment summary")
+    ws2.append(["Tag", "Description", "Key data (as stated)"])
+    for r in pfd.equipment_summary:
+        ws2.append(list(r))
+    xlsx = proj.out / "pfd_stream_table.xlsx"
+    wb.save(xlsx)
+    md = ["# Process flow diagram", "", f"Derived from `source_topology.json` (no P&ID rules). Streams: {len(pfd.streams)}; "
+          f"equipment symbols: {len(t.equipment)}; parallel banks drawn once: {len(pfd.banks)}; geometric problems: {len(qa)}; "
+          f"DEXPI round trip: {'PASS' if rt.ok and g_ok else 'FAIL'}.", "",
+          "Left out (P&ID detail): " + ", ".join(f"{n} {k}" for k, n in sorted(pfd.dropped.items()) if n) + ".", "",
+          "## Banks", ""] + [f"- {b.rep}: {', '.join(b.members)}" for b in pfd.banks] + ["", "## Streams", "",
+          "| No. | Service | From | To | Temperature | Pressure | Flow |", "|---|---|---|---|---|---|---|"]
+    for s_ in pfd.streams:
+        v = s_.values
+        md.append(f"| {s_.no} | {v.get('Service', '')} | {v.get('From', '')} | {v.get('To', '')} | {v.get('Temperature', '')} | "
+                  f"{v.get('Pressure', '')} | {v.get('Flow', '')}{'*' if 'Flow' in s_.derived else ''} |")
+    md += ["", "## Layout", ""] + ([f"- {q}" for q in qa] or ["No geometric problems."])
+    (proj.reports / "pfd.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    return PFDResult(pfd, qa, drawing.scale, rt.ok and g_ok, [pdf_path, xml_path, xlsx, proj.reports / "pfd.md"])
+
+
 class SourceChanged(RuntimeError):
     pass
 
@@ -141,6 +218,7 @@ class RunResult:
     sheet_scale: float = 0.0
     graphics: dict[str, int] | None = None
     extraction_check: list[tuple[str, str, str]] | None = None
+    pfd: PFDResult | None = None
 
 
 def run_all(project: str | Path, rebuild: bool = False, render: bool = True) -> RunResult:
@@ -205,4 +283,5 @@ def run_all(project: str | Path, rebuild: bool = False, render: bool = True) -> 
         "Enrichment idempotent": "yes" if idem else "NO",
     }
     (rep / "summary.md").write_text(R.summary_md(topo, val, rt, qa, facts_tbl), encoding="utf-8")
-    return RunResult(topo, enr, val, exp, rt, dl, qa, scales, idem, os_, sheet_qa, reg, drawing.scale, gstats, ext)
+    pfd_res = run_pfd(proj.root) if render else None
+    return RunResult(topo, enr, val, exp, rt, dl, qa, scales, idem, os_, sheet_qa, reg, drawing.scale, gstats, ext, pfd_res)

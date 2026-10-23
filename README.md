@@ -5,8 +5,10 @@ Give a coding agent (Claude Code or any agent that reads `AGENTS.md`) a specific
 1. **the P&ID on one A0 sheet** — plant areas, ISO 10628 / ISA 5.1 symbols, line numbers, legend, notes, hold list, title block;
 2. a **DEXPI Proteus XML** file (built with [pyDEXPI](https://github.com/process-intelligence-research/pyDEXPI)) carrying the model *and the
    same drawing* (Drawing, ShapeCatalogue, symbol positions, labels, routed pipe coordinates);
-3. **engineering lists** (equipment, line, valve, instrument) and a **decision register** that reduces the review to a few decisions;
-4. a **traceable topology**: every fact with page, section and verbatim quote; every addition with the rule that made it, pending review.
+3. **the PFD on one A0 sheet** from the same extraction — major equipment, parallel units drawn once, numbered streams with a stream
+   table and an equipment summary (`pid pfd`), also as DEXPI;
+4. **engineering lists** (equipment, line, valve, instrument) and a **decision register** that reduces the review to a few decisions;
+5. a **traceable topology**: every fact with page, section and verbatim quote; every addition with the rule that made it, pending review.
 
 > **Draft, not for construction.** Values the specification does not give (design pressures, relief sizing, fail positions, materials,
 > sizes, ranges) are never invented — they become open points.
@@ -57,6 +59,7 @@ pid_workflow/
   graphics.py, render_onesheet.py  the drawing is recorded once as primitives -> A0 PDF
   export_dexpi.py, proteus_ext.py, proteus_graphics.py   pyDEXPI model -> Proteus XML with piping, instrumentation and graphics
   roundtrip.py                   re-reads the XML (lxml + pyDEXPI) and compares it with the topology and the drawing
+  pfd.py                         PFD from the source topology: valves spliced out, banks collapsed, streams numbered, stream table
   decisions.py, lists.py, reports.py, review.py, pipeline.py, cli.py
 policies/   generic.yaml (never-invent list, valve defaults, tagging, line numbering), rendering.yaml, rule_packs/
 ```

@@ -23,6 +23,10 @@ def _print_run(res) -> None:  # noqa: ANN001
         print(f"one-sheet P&ID  : A0, {len(res.onesheet.zones)} plant areas, scale {res.sheet_scale:.2f}, {len(res.sheet_qa or [])} geometric problems")
         g = res.graphics or {}
         print(f"dexpi graphics  : {g.get('placed', 0)} symbols ({g.get('shapes', 0)} catalogue shapes), {g.get('centerlines', 0)} routed pipes, {g.get('labels', 0)} labels")
+    if res.pfd is not None:
+        f = res.pfd
+        print(f"PFD             : A0, {len(f.pfd.streams)} streams, {len(f.pfd.topo.equipment)} equipment symbols, scale {f.scale:.2f}, "
+              f"{len(f.qa)} geometric problems, DEXPI round trip {'PASS' if f.roundtrip_ok else 'FAIL'}")
     bad = sum(len(v) for v in res.qa.values())
     print(f"review pack     : {len(res.layout.sheets)} A3 sheets, {bad} geometric problems")
     if res.register is not None:
@@ -51,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
     n.add_argument("spec", help="the specification (PDF with a text layer, .txt or .md)")
     n.add_argument("--language", default="fr")
     n.add_argument("--force", action="store_true")
+    f = sub.add_parser("pfd", help="process flow diagram from the same extraction: A0 sheet, stream table, equipment summary, DEXPI")
+    f.add_argument("project")
     c = sub.add_parser("check", help="check an extraction: validation, verbatim quotes, open-point triage - with the fix for each problem")
     c.add_argument("project")
     args = ap.parse_args(argv)
@@ -64,6 +70,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"created {root}\n  {len(pages)} page texts in source/pages/ - read them all")
             print(f"next: write extraction/extract_{args.name}.py, run it, then: pid check {root} ; pid run {root}")
             return 0
+        if args.cmd == "pfd":
+            from .pipeline import run_pfd
+
+            r = run_pfd(args.project)
+            print(f"PFD             : A0, {len(r.pfd.streams)} streams, {len(r.pfd.topo.equipment)} equipment symbols "
+                  f"({len(r.pfd.banks)} parallel banks drawn once), scale {r.scale:.2f}, {len(r.qa)} geometric problems")
+            print(f"dexpi           : round trip {'PASS' if r.roundtrip_ok else 'FAIL'}")
+            print("wrote " + "\n      ".join(str(x) for x in r.files))
+            return 0 if (r.roundtrip_ok and not r.qa) else 1
         if args.cmd == "check":
             from .scaffold import check_project
 
@@ -78,7 +93,8 @@ def main(argv: list[str] | None = None) -> int:
             res = run_all(args.project, rebuild=args.rebuild, render=not args.no_pdf)
             _print_run(res)
             proj = load_project(args.project)
-            files = [proj.sheet_path, proj.xml_path, proj.lists_path, proj.reports / "decision_register.md", proj.svg_path, proj.pdf_path]
+            files = [proj.sheet_path, proj.xml_path, proj.lists_path, proj.reports / "decision_register.md", proj.svg_path, proj.pdf_path,
+                     proj.out / "pfd_one_sheet_A0.pdf", proj.out / "pfd.proteus.xml", proj.out / "pfd_stream_table.xlsx"]
             print("\nwrote " + "\n      ".join(str(f) for f in files if f.exists()))
             return 0 if (res.validation.ok and res.roundtrip.ok) else 1
         proj = load_project(args.project)
