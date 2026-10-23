@@ -1,0 +1,86 @@
+"""Command line: ``pid run <project>`` and friends."""
+
+from __future__ import annotations
+
+import argparse
+import sys
+
+from . import review as rv
+from .pipeline import SourceChanged, load_policy_for, load_project, load_working, run_all, stage_enrich
+from .topology_io import save_topology
+
+
+def _print_run(res) -> None:  # noqa: ANN001
+    t = res.topology
+    pending = sum(1 for o in t.objects().values() if o.provenance.origin == "generated" and o.provenance.status == "pending_review")
+    print(f"validation      : {'PASS' if res.validation.ok else 'FAIL'} ({len(res.validation.errors)} errors, {len(res.validation.warnings)} warnings)")
+    print(f"enrichment      : idempotent={res.idempotent}, {pending} proposals pending review")
+    print(f"proteus xml     : round trip {'PASS' if res.roundtrip.ok else 'FAIL'} ({len(res.roundtrip.checks)} checks)")
+    bad = sum(len(v) for v in res.qa.values())
+    print(f"layout          : {len(res.layout.sheets)} sheets, {bad} geometric problems")
+    print(f"open points     : {sum(1 for u in t.unresolved_requirements if u.status == 'open')}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="pid", description="Draft P&IDs from engineering specifications.")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    r = sub.add_parser("run", help="enrich, validate, export, verify, lay out and render a project")
+    r.add_argument("project")
+    r.add_argument("--rebuild", action="store_true", help="discard working_topology.json and start again from the source snapshot")
+    r.add_argument("--no-pdf", action="store_true")
+    v = sub.add_parser("review", help="approve or reject proposed additions")
+    v.add_argument("project")
+    v.add_argument("--list", action="store_true", help="list pending proposals")
+    v.add_argument("--approve", nargs="*", metavar="ID")
+    v.add_argument("--approve-rule", metavar="RULE")
+    v.add_argument("--approve-all", action="store_true")
+    v.add_argument("--reject", nargs="*", metavar="ID")
+    s = sub.add_parser("status", help="counts of proposals and open points")
+    s.add_argument("project")
+    args = ap.parse_args(argv)
+
+    try:
+        if args.cmd == "run":
+            res = run_all(args.project, rebuild=args.rebuild, render=not args.no_pdf)
+            _print_run(res)
+            proj = load_project(args.project)
+            print(f"\nwrote {proj.pdf_path if not args.no_pdf else '(no pdf)'}\n      {proj.xml_path}\n      {proj.reports}/ (summary.md first)")
+            return 0 if (res.validation.ok and res.roundtrip.ok) else 1
+        proj = load_project(args.project)
+        topo = load_working(proj)
+        if args.cmd == "status":
+            pend = rv.pending_ids(topo)
+            print(f"{len(pend)} pending proposals; "
+                  f"{sum(1 for u in topo.unresolved_requirements if u.status == 'open')} open points")
+            return 0
+        if args.cmd == "review":
+            if args.list:
+                for oid in rv.pending_ids(topo):
+                    print(oid)
+                return 0
+            changed = False
+            if args.reject:
+                res = rv.reject(topo, args.reject)
+                for oid, why in res.skipped:
+                    print(f"cannot reject {oid}: {why}")
+                print(f"rejected {len(res.rejected)}")
+                changed = changed or bool(res.rejected)
+            if args.approve is not None or args.approve_rule or args.approve_all:
+                ids = args.approve if args.approve else None
+                res = rv.approve(topo, ids=ids, rule=args.approve_rule)
+                for oid, why in res.skipped:
+                    print(f"cannot approve {oid}: {why}")
+                print(f"approved {len(res.approved)}")
+                changed = changed or bool(res.approved)
+            if changed:
+                save_topology(topo, proj.p("working_topology"))
+                print("saved working_topology.json - run `pid run` again to regenerate PDF, XML and reports")
+            return 0
+    except SourceChanged as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

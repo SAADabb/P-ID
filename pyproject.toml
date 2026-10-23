@@ -1,0 +1,29 @@
+[project]
+name = "pid-workflow"
+version = "0.1.0"
+description = "Reusable workflow that turns an engineering specification into a draft P&ID (topology, review PDF, DEXPI Proteus XML)."
+requires-python = ">=3.11"
+dependencies = [
+  "pydexpi>=1.2.0",
+  "pydantic>=2.5",
+  "pyyaml>=6.0",
+  "reportlab>=4.0",
+  "networkx>=3.0",
+  "lxml>=5.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+pid = "pid_workflow.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["pid_workflow*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

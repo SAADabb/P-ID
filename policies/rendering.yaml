@@ -1,0 +1,18 @@
+# Review-PDF styling (generic).  Colours are matched on the service prefix of a line.
+# The exported DEXPI file carries only the Service attribute; the target CAD template decides
+# its own colours (spec §5) - these are for the human review PDF only.
+service_colors:
+  - {prefix: "Steam",                 color: "#2b2b2b", label: "Steam"}
+  - {prefix: "Flash steam",           color: "#6b6b6b", label: "Flash steam"}
+  - {prefix: "Hot water RCUA",        color: "#d4561a", label: "Hot water RCUA 85/105"}
+  - {prefix: "Hot water",             color: "#c0262d", label: "Hot water process 90/70"}
+  - {prefix: "Internal loop",         color: "#a0522d", label: "Internal loop PAC 2A/2B"}
+  - {prefix: "Cooling water",         color: "#0a8f8f", label: "Cooling water 20/31"}
+  - {prefix: "Well water",            color: "#1f5fbf", label: "Well water"}
+  - {prefix: "Treated make-up",       color: "#2e8b57", label: "Treated make-up water"}
+  - {prefix: "Process fluid",         color: "#7d3c98", label: "Process fluid (LPF tanks)"}
+  - {prefix: "Drain",                 color: "#707070", label: "Drain"}
+  - {prefix: "Vent",                  color: "#707070", label: "Vent"}
+default_color: "#444444"
+proposed_color: "#e07b00"   # additions pending review
+future_dash: [4, 3]

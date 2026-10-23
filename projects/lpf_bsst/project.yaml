@@ -1,0 +1,11 @@
+# One project = one specification.  Paths are relative to this file.
+name: lpf_bsst
+source_document: "source/Cahier des Charges P&ID Consolidé.pdf"
+source_topology: source_topology.json     # frozen snapshot written by the extraction step
+working_topology: working_topology.json   # source + proposed additions
+rules: project_rules.yaml                 # project rules (cite the specification)
+layout_hints: layout_hints.yaml           # which objects go on which sheet (not engineering data)
+generic_policy: ../../policies/generic.yaml
+rendering: ../../policies/rendering.yaml
+output_dir: output
+reports_dir: reports

@@ -1,0 +1,29 @@
+# Sheet organisation for the LPF/BSST drawings.  This is NOT engineering data: it only decides
+# which macro objects (equipment, boundaries, manifolds) are drawn on which sheet.  Valves and
+# instruments follow the lines and objects they belong to.  Connections between sheets are drawn
+# automatically as off-page references.
+sheets:
+  - id: S1
+    title: "Well water and emergency exchangers"
+    assign: [bc.well, bc.darse, "mf.wp_*", "eq.well_pump_*", "mf.ech_cw_*", "eq.emerg_hx_*", mf.darse_m]
+  - id: S2
+    title: "Cooling-water loop – fermenters, buffer tanks, PAC-loop pumps"
+    assign: [eq.tank_cold, eq.tank_warm, eq.fermenters, mf.ferm_out, "mf.lp_*", "eq.loop_pump_*", "mf.cw_*"]
+  - id: S3
+    title: "Heat pumps (PAC 1A/1B, 2A/2B cascade, future 3A/3B) and RCUA loop"
+    assign: ["eq.hp_*", eq.tank_rcua, "bc.rcua_*"]
+  - id: S4
+    title: "Hot-water production and distribution 90/70 °C"
+    assign: [eq.tank_70, eq.tank_90, "mf.hp1_c_*", mf.hw90_s, mf.hw70_m]
+  - id: S5
+    title: "Steam – flash tank and CMV compression train"
+    assign: [eq.flash_tank, "eq.cmv_s*", mf.s1_tap, mf.s2_tap]
+  - id: S6
+    title: "Steam headers, 8→4→1 bar spill cascade and back-up boiler"
+    assign: [eq.boiler, "mf.mh*", "mf.sp*", "bc.vap*"]
+  - id: S7
+    title: "LPF tanks – hot-water heating with retained steam exchangers"
+    assign: ["eq.lpf_tank_*", "eq.lpf_phx_*", "eq.lpf_shx_*", "mf.lpf_loop_*"]
+  - id: S8
+    title: "Steam users (LPF, BSST), thermal degasser and air-preheating coil"
+    assign: ["mf.net_*", eq.lpf_k3, eq.lpf_messo, eq.lpf_gea, "eq.bsst_*", "eq.lpf_degasser*", bc.makeup]

@@ -1,0 +1,57 @@
+# Generic engineering policy – independent of any project.
+# Project rule files (projects/<name>/project_rules.yaml) select and parameterise the rule
+# types below; explicit project requirements always win over these defaults.
+version: 1
+
+principles:
+  precedence: "Explicit project requirements take precedence over generic defaults."
+  prerequisites: "A rule fires only when its prerequisites are established in the topology."
+  reuse: "Existing components are reused; nothing is duplicated."
+  review: "Every addition stays pending_review until an engineering review approves it."
+  idempotence: "Re-applying enrichment never duplicates a satisfied requirement."
+  inline_insertion: "Inline components are inserted by splitting the original line; service and properties are preserved."
+  branches: "Branches and bypasses are modelled with explicit manifolds (tees)."
+  control_loop: "A control loop is measurement -> controller -> final element. A transmitter alone never implies a controller."
+
+# Values that must never be invented; they are preserved as unresolved requirements.
+never_invent:
+  - design_pressure
+  - relief_sizing
+  - safety_thresholds
+  - valve_failure_position
+  - material_class
+  - nozzle_size
+  - instrument_range
+
+# Generic representation used when a valve technology is not specified by the source.
+valve_defaults:
+  generic_class: CustomOperatedValve
+  generic_type_name: "Valve - technology to be selected"
+  generic_type_names:
+    isolation: "Isolation valve - technology to be selected"
+    drain: "Drain valve - technology to be selected"
+    vent: "Vent valve - technology to be selected"
+    purge: "Purge valve - technology to be selected"
+    control: "Control valve - type to be selected"
+
+# ISA 5.1 style tagging for generated objects. Tags are PROPOSALS (tag_status: proposed).
+tagging:
+  separator: "-"
+  series:            # first sequence number per tag prefix
+    PT: 101
+    TT: 301
+    LT: 401
+    PIC: 101         # loop instruments share the loop number of their transmitter
+    XV: 201
+    NRV: 251
+    PCV: 501
+  by_function:       # component function -> tag prefix
+    isolation: XV
+    bypass: XV
+    drain: XV
+    vent: XV
+    purge: XV
+    check: NRV
+    control: PCV
+  notes:
+    NRV: "ISA 5.1 defines no check-valve letter code; 'NRV' is a placeholder convention to be confirmed."

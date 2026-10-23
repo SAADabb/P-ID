@@ -1,0 +1,84 @@
+# Project rules for the LPF/BSST specification.  Every rule cites the PDF section that
+# makes it an explicit project requirement.
+project: lpf_bsst
+document: "Cahier des Charges P&ID Consolidé.pdf"
+language: en
+
+rules:
+  - id: pump.auxiliaries
+    type: pump_auxiliaries
+    enabled: true
+    source: {page: 3, section: "5. Règles de peuplement – Pompes (Centrifuges)",
+             quote: "générer automatiquement une vanne d'isolement manuelle à l'aspiration, ainsi qu'un clapet anti-retour (Check Valve) suivi d'une vanne d'isolement au refoulement"}
+    params:
+      applies_to_classes: [CentrifugalPump]
+      suction_nozzle_role: suction
+      discharge_nozzle_role: discharge
+      suction: [{function: isolation, operation: manual}]
+      discharge: [{function: check, operation: unknown}, {function: isolation, operation: manual}]
+
+  - id: mode.isolation
+    type: mode_isolation
+    enabled: true
+    source: {page: 3, section: "4. Mode Secours Ultime / Mode Secours Échangeurs",
+             quote: "Vannes d'isolement fermées vers PAC et échangeurs"}
+    params:
+      modes: [mode.ultimate, mode.emergency_hx]
+      valve: {function: isolation, operation: unknown}
+
+  - id: header.instrumentation
+    type: header_instrumentation
+    enabled: true
+    source: {page: 3, section: "5. Instrumentation des Collecteurs (Headers)",
+             quote: "Assigner systématiquement un Transmetteur de Pression (PT) et un Transmetteur de Température (TT) sur les collecteurs principaux de vapeur (1, 4, 8 bar) et d'eau chaude (90°C, 105°C)"}
+    params:
+      services: ["Steam 8 bar", "Steam 4 bar", "Steam 1 bar", "Hot water 90/70", "Hot water RCUA 85/105"]
+      instruments:
+        - {isa_code: PT, measured_variable: pressure}
+        - {isa_code: TT, measured_variable: temperature}
+
+  - id: control_valve.manifold
+    type: control_valve_manifold
+    enabled: true
+    source: {page: 3, section: "5. Vannes de Régulation (Control Valves)",
+             quote: "une vanne d'isolement amont, une vanne d'isolement aval, une soupape de purge, et une ligne de by-pass équipée d'une vanne à soupape (Globe Valve)"}
+    params:
+      applies_to_function: control
+      upstream_isolation: {function: isolation, operation: unknown}
+      downstream_isolation: {function: isolation, operation: unknown}
+      purge: {function: purge, operation: unknown}
+      bypass_valve: {function: bypass, model_class: GlobeValve, operation: unknown}
+
+  - id: vessel.auxiliaries
+    type: vessel_auxiliaries
+    enabled: true
+    source: {page: 3, section: "5. Équipements Capacitifs (Cuves & Bâches)",
+             quote: "Ajouter automatiquement une vanne de vidange (Drain) en point bas, un évent (Vent) en point haut, et un Transmetteur de Niveau (LT)"}
+    params:
+      applies_to_classes: [Tank, Vessel]
+      include_existing: true
+      drain: {function: drain, operation: unknown}
+      vent: {function: vent, operation: unknown}
+      level: {isa_code: LT, measured_variable: level}
+
+  - id: control_loop.from_requirement
+    type: control_loop
+    enabled: true
+    source: {page: 3, section: "4. Secours Chaudière Gaz (Standby)",
+             quote: "la chaudière s'active via une vanne de régulation automatique (PCV) si la pression du collecteur 8 bar chute sous le seuil exact de 7,5 bar eff."}
+    params:
+      controller_code: {pressure: PIC, temperature: TIC, level: LIC}
+
+  - id: tagging.isa
+    type: tagging
+    enabled: true
+    source: {page: 3, section: "5. Nomenclature ISA 5.1",
+             quote: "Assigner un Tag unique standardisé à chaque équipement généré (ex: PI-101 pour indicateur de pression, XV-201 pour vanne d'isolement)"}
+    params:
+      tag_untagged_source_control_valves: true
+
+  - id: unresolved.generated
+    type: unresolved_summary
+    enabled: true
+    source: {page: 3, section: "5. (generic policy – never invent)", quote: null}
+    params: {}
