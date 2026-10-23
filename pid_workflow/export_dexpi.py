@@ -506,11 +506,31 @@ class Exporter:
         import re
 
         from pydexpi.dexpi_classes.pydantic_classes import DexpiBaseModel
-        from pydexpi.toolkits import model_toolkit as mt
+        from pydexpi.toolkits import base_model_utils as bmu
+
+        def walk(root: DexpiBaseModel) -> list[DexpiBaseModel]:
+            """All objects below ``root`` in composition order (pyDEXPI's own helper is quadratic)."""
+            out: list[DexpiBaseModel] = []
+            visited: set[int] = set()
+            stack = [root]
+            while stack:
+                o = stack.pop()
+                if id(o) in visited:
+                    continue
+                visited.add(id(o))
+                out.append(o)
+                children: list[DexpiBaseModel] = []
+                for v in bmu.get_composition_attributes(o).values():
+                    if isinstance(v, DexpiBaseModel):
+                        children.append(v)
+                    elif isinstance(v, list):
+                        children += [x for x in v if isinstance(x, DexpiBaseModel)]
+                stack.extend(reversed(children))
+            return out
 
         seen: set[str] = set()
         counters: dict[str, int] = {}
-        for obj in mt.get_all_instances_in_model(model.conceptualModel, None):
+        for obj in walk(model.conceptualModel):
             if not isinstance(obj, DexpiBaseModel) or getattr(obj, "proteusId", None):
                 continue
             cls = type(obj).__name__
