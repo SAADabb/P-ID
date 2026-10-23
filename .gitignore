@@ -10,3 +10,6 @@ dist/
 # Projects (one per specification) are local work: the repository holds only the generic tool.
 projects/*
 !projects/README.md
+
+# exported project archives (downloads, not repository content)
+*.zip
