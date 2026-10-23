@@ -62,7 +62,7 @@ def test_new_spec_from_scratch(repo: Path):
     res = run_all(root)
     t = res.topology
     assert res.validation.ok and res.roundtrip.ok and res.idempotent
-    assert onesheet_qa(res.onesheet) == []
+    assert onesheet_qa(res.onesheet) == [] and res.sheet_qa == []  # incl. text crossed by pipes or on other text
     # the good-practice pack populated the pumps and protected the pressure vessel
     kinds = {(c.kind, c.function) for c in t.components}
     assert {("strainer", "strainer"), ("check_valve", "check"), ("valve", "isolation"), ("relief", "relief")} <= kinds

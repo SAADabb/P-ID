@@ -1142,9 +1142,24 @@ def place_instruments(sl: SheetLayout, topo: Topology) -> None:
             if comp.function == "control":
                 taken.append((x - 8, y - 30, x + 8, y - 8))
 
-    def free(cx: float, cy: float) -> bool:
+    # the dashed TBC stubs of unconnected process nozzles and their text
+    for n, px, py, dx, dy in tbc_stubs(sl):
+        tx, ty = px + dx * 30, py + dy * 30
+        taken.append((min(px, tx) - 4 - (16 if dx < 0 else 0), min(py, ty) - 6, max(px, tx) + 4 + (16 if dx > 0 else 0), max(py, ty) + 6))
+    pipe_segs = [(a[0], a[1], b[0], b[1]) for e in sl.edges for a, b in zip(e.path, e.path[1:])]
+
+    def on_pipe(r: tuple[float, float, float, float]) -> bool:
+        return any(min(x1, x2) < r[2] and r[0] < max(x1, x2) + 0.01 and min(y1, y2) < r[3] and r[1] < max(y1, y2) + 0.01
+                   for x1, y1, x2, y2 in pipe_segs)
+
+    def free(cx: float, cy: float, strict: bool = True) -> bool:
+        """Clear of symbols, text and bubbles; ``strict`` also clear of every pipe."""
         r = (cx - 12, cy - 12, cx + 12, cy + 12)
-        return not any(_hit(r, q) for q in taken)
+        return not any(_hit(r, q) for q in taken) and not (strict and on_pipe(r))
+
+    def leader_free(x: float, y_line: float, y_bubble: float) -> bool:
+        lo, hi = sorted((y_line, y_bubble + (11 if y_bubble < y_line else -11)))
+        return not any(_hit((x - 0.5, lo + 2, x + 0.5, hi), q) for q in taken)
 
     line_edges: dict[str, list[MEdge]] = defaultdict(list)
     for e in sl.edges:
@@ -1175,11 +1190,14 @@ def place_instruments(sl: SheetLayout, topo: Topology) -> None:
                         cur = max(cur, cb)
             runs.sort(key=lambda r: -r[0])
             chosen = None
-            for length, xm, y in runs:
-                for dx in (0, 30, -30, 60, -60, 90, -90):
-                    for dy in (-34, 34, -52, 52):
-                        if abs(xm + dx - xm) <= length / 2 and free(xm + dx, y + dy):
-                            chosen = (xm + dx, y, y + dy)
+            for strict in (True, False):
+                for length, xm, y in runs:
+                    for dx in (0, 30, -30, 60, -60, 90, -90):
+                        for dy in (-34, 34, -52, 52, -70, 70):
+                            if abs(dx) <= length / 2 and free(xm + dx, y + dy, strict) and leader_free(xm + dx, y, y + dy):
+                                chosen = (xm + dx, y, y + dy)
+                                break
+                        if chosen:
                             break
                     if chosen:
                         break
@@ -1198,13 +1216,16 @@ def place_instruments(sl: SheetLayout, topo: Topology) -> None:
             if n is None:
                 continue
             placed = False
-            for side in (1, -1):
-                for dy in (12, 36, -4):
-                    bx = n.x + side * (n.w / 2 + 30)
-                    by = n.y - n.h / 2 + dy
-                    if free(bx, by):
-                        commit(Placed(i, bx, by, [(bx - side * 11, by), (n.x + side * n.w / 2, by)]))
-                        placed = True
+            for strict in (True, False):
+                for side in (1, -1):
+                    for dy in (12, 36, -4, 60):
+                        bx = n.x + side * (n.w / 2 + 30)
+                        by = n.y - n.h / 2 + dy
+                        if by < n.y + n.h / 2 and free(bx, by, strict):
+                            commit(Placed(i, bx, by, [(bx - side * 11, by), (n.x + side * n.w / 2, by)]))
+                            placed = True
+                            break
+                    if placed:
                         break
                 if placed:
                     break
@@ -1239,15 +1260,87 @@ def place_instruments(sl: SheetLayout, topo: Topology) -> None:
                 d = 12 if b_.y > a_.y else -12
                 sl.signals.append(("measurement", [(a_.x, a_.y + d), (b_.x, b_.y - d)]))
             else:
-                sl.signals.append(("measurement", [(a_.x + (12 if b_.x > a_.x else -12), a_.y), (b_.x, a_.y), (b_.x, b_.y + (12 if b_.y < a_.y else -12))]))
+                sl.signals.append(("measurement", _signal_route(sl, (a_.x, a_.y), (b_.x, b_.y), 12, 12, (a_.inst.id, b_.inst.id))))
         elif s.kind == "control" and s.to in sym_rect:
             r = sym_rect[s.to]
             tx, ty = (r[0] + r[2]) / 2, (r[1] + r[3]) / 2
-            sl.signals.append(("control", [(a_.x + (12 if tx > a_.x else -12), a_.y), (tx, a_.y), (tx, ty - 27 if a_.y < ty else ty + 12)]))
+            if a_.y < ty:
+                pts = _signal_route(sl, (a_.x, a_.y), (tx, ty), 12, 27, (a_.inst.id, s.to), into="down")
+            else:
+                pts = _signal_route(sl, (a_.x, a_.y), (tx, ty), 12, 12, (a_.inst.id, s.to), into="up")
+            sl.signals.append(("control", pts))
     x0_, y0_, x1_, y1_ = sl.bbox
     for pl_ in sl.instruments:
         x0_, y0_, x1_, y1_ = min(x0_, pl_.x - 14), min(y0_, pl_.y - 14), max(x1_, pl_.x + 14), max(y1_, pl_.y + 14)
     sl.bbox = (x0_, y0_, x1_, y1_)
+
+
+def tbc_stubs(sl: SheetLayout) -> list[tuple[MNode, float, float, int, int]]:
+    """Process nozzles the specification leaves unconnected: (node, nozzle x, y, dx, dy) of their dashed TBC stub."""
+    used = {(e.src[0], e.src[1]) for e in sl.edges} | {(e.dst[0], e.dst[1]) for e in sl.edges}
+    out = []
+    for n in sl.nodes.values():
+        if n.kind != "equipment" or n.obj is None:
+            continue
+        for nz in n.obj.nozzles:
+            if nz.role not in ("inlet", "outlet", "suction", "discharge") or (n.id, nz.name) in used or nz.name not in n.ports:
+                continue
+            side, _ = n.ports[nz.name]
+            px, py = n.port_xy(nz.name)
+            out.append((n, px, py, {"L": -1, "R": 1}.get(side, 0), {"T": -1, "B": 1}.get(side, 0)))
+    return out
+
+
+def _signal_route(sl: SheetLayout, a: tuple[float, float], b: tuple[float, float], ra: float, rb: float,
+                  own: tuple[str, str], into: str = "") -> list[tuple[float, float]]:
+    """Dashed signal from bubble ``a`` to ``b`` (an instrument or a valve actuator): the L (or Z) that crosses nothing.
+
+    ``ra``/``rb`` keep the line off the bubble / actuator; ``into`` forces the last leg vertical (down or up).
+    """
+    sx = 1 if b[0] > a[0] else -1
+    sy = 1 if b[1] > a[1] else -1
+    end_v = (b[0], b[1] - rb) if sy > 0 else (b[0], b[1] + rb)
+    cands = [[(a[0] + sx * ra, a[1]), (b[0], a[1]), end_v]]            # horizontal, then down/up to the target
+    if not into:
+        end_h = (b[0] - sx * rb, b[1])
+        cands.append([(a[0], a[1] + sy * ra), (a[0], b[1]), end_h])   # vertical, then across
+    for f in (0.5, 0.25, 0.75):                                         # Z: down, across, down
+        ym = a[1] + (end_v[1] - a[1]) * f
+        cands.append([(a[0], a[1] + sy * ra), (a[0], ym), (b[0], ym), end_v])
+    for f in (0.5, 0.25, 0.75):                                         # Z: across, down, across, down
+        xm = a[0] + (b[0] - a[0]) * f
+        for ym in (a[1] + (end_v[1] - a[1]) * 0.5, end_v[1] - sy * 14):
+            cands.append([(a[0] + sx * ra, a[1]), (xm, a[1]), (xm, ym), (b[0], ym), end_v])
+    for k in (20, 40, 70):                                               # away from the target first, then around
+        ym = a[1] - sy * (ra + k)
+        cands.append([(a[0], a[1] - sy * ra), (a[0], ym), (b[0], ym), end_v])
+    obs = []
+    for n in sl.nodes.values():
+        if n.kind not in ("dummy", "terminal"):
+            obs.append(_rect(n))
+    for e in sl.edges:
+        for c, x, y, ori in e.symbols:
+            if c.id not in own:
+                obs.append((x - 9, y - 7, x + 9, y + 7) if ori == "H" else (x - 7, y - 9, x + 7, y + 9))
+    for p in sl.instruments:
+        if p.inst.id not in own:
+            obs.append((p.x - 11, p.y - 11, p.x + 11, p.y + 11))
+
+    def hits(pts: list[tuple[float, float]]) -> int:
+        k = 0
+        for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+            for r in obs:
+                if min(x1, x2) < r[2] - 0.8 and r[0] + 0.8 < max(x1, x2) + 0.01 and min(y1, y2) < r[3] - 0.8 and r[1] + 0.8 < max(y1, y2) + 0.01:
+                    k += 1
+        return k
+
+    def length(pts: list[tuple[float, float]]) -> float:
+        return sum(abs(q[0] - p[0]) + abs(q[1] - p[1]) for p, q in zip(pts, pts[1:]))
+
+    best = min(hits(c) for c in cands)
+    first = next(c for c in cands if hits(c) == best)
+    # the simple L when it is clean, otherwise the shortest clean detour
+    return first if cands.index(first) < 2 else min((c for c in cands if hits(c) == best), key=length)
 
 
 # ------------------------------------------------------------------------- sheet assembly

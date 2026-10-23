@@ -68,8 +68,8 @@ def run_pfd(project: str | Path) -> PFDResult:
     content.stream_table = rows
     hints = _hints(proj)
     os_ = build_onesheet(t, hints)
-    qa = onesheet_qa(os_)
     drawing = draw_onesheet(t, os_, Style(proj.p("rendering")), content)
+    qa = onesheet_qa(os_, drawing.prims)
     unnumbered = [s_.no for s_ in pfd.streams if str(s_.no) not in content._labelled]
     if unnumbered:
         qa.append(f"stream numbers not placed on the drawing: {unnumbered[:20]}{' …' if len(unnumbered) > 20 else ''}")
@@ -249,8 +249,8 @@ def run_all(project: str | Path, rebuild: bool = False, render: bool = True) -> 
     # the one-sheet drawing: laid out, recorded once, written to the DEXPI file and to the PDF
     reg = build_register(topo, load_plan(proj.plan_path))
     os_ = build_onesheet(topo, hints)
-    sheet_qa = onesheet_qa(os_)
     drawing = draw_onesheet(topo, os_, Style(proj.p("rendering")), sheet_content(topo, reg))
+    sheet_qa = onesheet_qa(os_, drawing.prims)
     gstats = add_graphics(proj.xml_path, drawing, os_, topo, None)
     rt = verify_roundtrip(topo, proj.xml_path)
     for name, ok, detail in verify_graphics(proj.xml_path, gstats):

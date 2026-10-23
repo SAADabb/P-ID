@@ -56,7 +56,7 @@ Test cases for the skill are in `skills/pid-pfd-from-spec/evals/` (`claude plugi
 * **Rules** (`policies/rule_packs/process_good_practice.yaml`, all proposals): pump strainer / isolation / check + PI, compressor isolation /
   check, exchanger isolation, vessel drain / vent / LT, relief device on pressure vessels, control-valve stations, control loops only
   where the document states automatic control, ISA 5.1 tags, line numbers. Declarative `equipment_template` rules cover new cases.
-* **Layout**: plant areas laid out as zones of one sheet, pipes between areas routed through (no off-page connectors), geometric QA.
+* **Layout**: plant areas laid out as zones of one sheet, pipes between areas routed through (no off-page connectors), a repair router that re-routes any pipe drawn through a symbol or its text, and geometric QA of the drawn sheet (pipes, symbols, signal lines and text).
 
 ## Architecture
 

@@ -14,10 +14,12 @@ from pathlib import Path
 from typing import Any
 
 from reportlab.lib import colors
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
 from .graphics import Owner, Prim, Recorder, replay
-from .layout import MEdge, MNode
+
+from .layout import MEdge, MNode, tbc_stubs
 from .onesheet import OneSheet
 from .render_pdf import (
     AMBER_FILL,
@@ -186,7 +188,7 @@ def _content(rec: Recorder, painter: SheetPainter, os_: OneSheet, st: Style, con
         if len(e.path) < 2:
             continue
         rec.owner = Owner("line", e.id, "line")
-        _edge(rec, painter, e, st, content, lines)
+        _edge(rec, painter, e, st, content, lines, sl)
     # equipment, boundaries, manifolds
     for n in sl.nodes.values():
         if n.kind == "equipment":
@@ -199,49 +201,53 @@ def _content(rec: Recorder, painter: SheetPainter, os_: OneSheet, st: Style, con
             rec.owner = Owner("manifold", n.id, "label")
             painter.draw_manifold(n, sl)
     # process nozzles the specification leaves unconnected: dashed stub marked TBC
-    used_ports = {(e.src[0], e.src[1]) for e in sl.edges} | {(e.dst[0], e.dst[1]) for e in sl.edges}
-    for n in sl.nodes.values():
-        if n.kind != "equipment":
-            continue
-        for nz in n.obj.nozzles:
-            if nz.role not in ("inlet", "outlet", "suction", "discharge") or (n.id, nz.name) in used_ports or nz.name not in n.ports:
-                continue
-            side, _ = n.ports[nz.name]
-            px, py = n.port_xy(nz.name)
-            dx = {"L": -1, "R": 1}.get(side, 0)
-            dy = {"T": -1, "B": 1}.get(side, 0)
-            rec.owner = Owner("equipment", n.id, "label")
-            rec.saveState()
-            rec.setStrokeColor(GREY)
-            rec.setLineWidth(1.0)
-            rec.setDash(3, 2)
-            rec.line(px, py, px + dx * 26, py + dy * 26)
-            rec.restoreState()
-            txt(rec, px + dx * 30, py + dy * 30 + 2.5, "TBC", 5.8, FONT_B, "l" if dx >= 0 else "r", GREY)
+    for n, px, py, dx, dy in tbc_stubs(sl):
+        rec.owner = Owner("equipment", n.id, "label")
+        rec.saveState()
+        rec.setStrokeColor(GREY)
+        rec.setLineWidth(1.0)
+        rec.setDash(3, 2)
+        rec.line(px, py, px + dx * 26, py + dy * 26)
+        rec.restoreState()
+        txt(rec, px + dx * 30, py + dy * 30 + 2.5, "TBC", 5.8, FONT_B, "l" if dx >= 0 else "r", GREY)
     # valves; tags take the first free spot (above, below, beside) so they never sit on another tag or valve
-    from reportlab.pdfbase.pdfmetrics import stringWidth
 
     taken: list[tuple[float, float, float, float]] = []
     for e in sl.edges:
         for comp, x, y, ori in e.symbols:
             taken.append((x - 9, y - 7, x + 9, y + 7) if ori == "H" else (x - 7, y - 9, x + 7, y + 9))
 
-    def free(r: tuple[float, float, float, float]) -> bool:
-        return not any(r[0] < q[2] and q[0] < r[2] and r[1] < q[3] and q[1] < r[3] for q in taken)
+    for pl in sl.instruments:
+        taken.append((pl.x - 12, pl.y - 12, pl.x + 12, pl.y + 12))
+    for n in sl.nodes.values():
+        if n.kind == "manifold":
+            taken.append((n.x - 3, n.span[0] - 3, n.x + 3, n.span[1] + 3))
+        elif n.kind in ("equipment", "boundary"):
+            taken.append((n.x - n.w / 2, n.y - n.h / 2, n.x + n.w / 2, n.y + n.h / 2))
+    segs = [(a, b) for e in sl.edges for a, b in zip(e.path, e.path[1:])]
+
+    def free(r: tuple[float, float, float, float], strict: bool = True) -> bool:
+        """Clear of tags, valves and bubbles; ``strict`` also clear of every pipe."""
+        return not any(r[0] < q[2] and q[0] < r[2] and r[1] < q[3] and q[1] < r[3] for q in taken) and not (strict and _on_segs(r, segs))
 
     def place_tag(tag: str, x: float, y: float, ori: str, control: bool) -> tuple[float, float, str]:
         w = stringWidth(tag, FONT_B, 6.6)
         if ori == "H":
             cands = [(x, y - (25 if control else 12), "c"), (x, y + 18.5, "c"), (x, y - 24, "c"), (x, y + 30, "c"),
                      (x + 12, y - 12, "l"), (x - 12, y - 12, "r")]
+            cands += [(x, y - 36, "c"), (x, y + 42, "c"), (x + 22, y - 12, "l"), (x - 22, y - 12, "r")]
         else:
-            cands = [(x + 11, y + 2.4, "l"), (x - 11, y + 2.4, "r"), (x + 11, y - 10, "l"), (x - 11, y + 14, "r")]
-        for cx, cy, al in cands:
-            x0 = cx - w / 2 if al == "c" else (cx if al == "l" else cx - w)
-            r = (x0 - 1, cy - 6.5, x0 + w + 1, cy + 1.5)
-            if free(r):
-                taken.append(r)
-                return cx, cy, al
+            cands = [(x + 11, y + 2.4, "l"), (x - 11, y + 2.4, "r"), (x + 11, y - 10, "l"), (x - 11, y + 14, "r"),
+                     (x + 11, y + 15, "l"), (x - 11, y - 10, "r"), (x + 22, y + 2.4, "l"), (x - 22, y + 2.4, "r")]
+        # crowded spot: then the nearest free place on a wider ring
+        ring = [(x + dx, y + dy, "c") for d in (30, 44, 58) for dx, dy in ((0, -d), (0, d + 6), (d, -6), (-d, -6), (d, d), (-d, d), (d, -d), (-d, -d))]
+        for strict in (True, False):
+            for cx, cy, al in cands + ring:
+                x0 = cx - w / 2 if al == "c" else (cx if al == "l" else cx - w)
+                r = (x0 - 1, cy - 6.5, x0 + w + 1, cy + 1.5)
+                if free(r, strict):
+                    taken.append(r)
+                    return cx, cy, al
         cx, cy, al = cands[0]
         return cx, cy, al
 
@@ -364,7 +370,33 @@ def _hold_marker(rec: Recorder, x: float, y: float, num: int) -> None:
     txt(rec, x, y + 2.6, f"H{num}", 7.0, FONT_B, "c", RED)
 
 
-def _edge(rec: Recorder, painter: SheetPainter, e: MEdge, st: Style, content: SheetContent, lines: dict[str, Any]) -> None:
+def _on_segs(r: tuple[float, float, float, float], segs: list) -> bool:
+    return any(min(a[0], b[0]) < r[2] and r[0] < max(a[0], b[0]) + 0.01 and min(a[1], b[1]) < r[3] and r[1] < max(a[1], b[1]) + 0.01
+               for a, b in segs)
+
+
+def _label_spot(e: MEdge, sl: Any, a: tuple[float, float], b: tuple[float, float], half_w: float, above: float, below: float,
+                path: list[tuple[float, float]] | None = None) -> tuple[float, float]:
+    """Point on segment a-b where a label of the given extent touches no other pipe and no valve.
+
+    When a-b has no such point, the other segments of ``path`` (longest first) are tried; else the middle of a-b.
+    """
+    others = [(p, q) for o in sl.edges if o is not e for p, q in zip(o.path, o.path[1:])]
+    syms = [(x - 10, y - 10, x + 10, y + 10) for o in sl.edges for _, x, y, _ in o.symbols]
+    syms += [(p.x - 12, p.y - 12, p.x + 12, p.y + 12) for p in sl.instruments]
+    segs = [(a, b)] + sorted(zip(path or [], (path or [])[1:]), key=lambda pq: -(abs(pq[1][0] - pq[0][0]) + abs(pq[1][1] - pq[0][1])))
+    for p0, p1 in segs:
+        if abs(p1[0] - p0[0]) + abs(p1[1] - p0[1]) < 2 * half_w + 4:
+            continue
+        for f in (0.5, 0.35, 0.65, 0.2, 0.8, 0.1, 0.9):
+            x, y = p0[0] + (p1[0] - p0[0]) * f, p0[1] + (p1[1] - p0[1]) * f
+            r = (x - half_w, y - above, x + half_w, y + below)
+            if not _on_segs(r, others) and not any(r[0] < q[2] and q[0] < r[2] and r[1] < q[3] and q[1] < r[3] for q in syms):
+                return x, y
+    return (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+
+
+def _edge(rec: Recorder, painter: SheetPainter, e: MEdge, st: Style, content: SheetContent, lines: dict[str, Any], sl: Any) -> None:
     col = st.proposed if e.proposed else st.color(e.service)
     rec.saveState()
     rec.setStrokeColor(col)
@@ -397,7 +429,8 @@ def _edge(rec: Recorder, painter: SheetPainter, e: MEdge, st: Style, content: Sh
                 _, a, b = segs[0]
                 content._labelled.add(lab_)
                 rec.owner = Owner("line", e.id, "label")
-                _diamond(rec, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, lab_, col)
+                r_ = 8.5 if len(lab_) < 3 else 10.5
+                _diamond(rec, *_label_spot(e, sl, a, b, r_, r_, r_, piece), lab_, col)
         rec.owner = owner
         return
     # line number on the longest horizontal run that is free of valves
@@ -417,25 +450,28 @@ def _edge(rec: Recorder, painter: SheetPainter, e: MEdge, st: Style, content: Sh
             if abs(ya - yb) < 0.01 and abs(xb - xa) > min_run:
                 lo, hi = sorted((xa, xb))
                 if not any(lo - 12 < sx < hi + 12 and abs(sy - ya) < 1 for _, sx, sy, _ in e.symbols):
-                    runs.append((hi - lo, (lo + hi) / 2, ya))
+                    runs.append((hi - lo, (lo, ya), (hi, ya)))
         if not runs and content.kind == "pfd":  # vertical run, then any segment, as fallbacks
             for i in range(len(e.path) - 1):
                 (xa, ya), (xb, yb) = e.path[i], e.path[i + 1]
                 if abs(xa - xb) < 0.01 and abs(yb - ya) > min_run:
                     lo, hi = sorted((ya, yb))
                     if not any(lo - 12 < sy < hi + 12 and abs(sx - xa) < 1 for _, sx, sy, _ in e.symbols):
-                        runs.append((hi - lo, xa, (lo + hi) / 2))
+                        runs.append((hi - lo, (xa, lo), (xa, hi)))
             if not runs:
                 seg = max(zip(e.path, e.path[1:]), key=lambda ab: abs(ab[1][0] - ab[0][0]) + abs(ab[1][1] - ab[0][1]))
-                runs.append((0.0, (seg[0][0] + seg[1][0]) / 2, (seg[0][1] + seg[1][1]) / 2))
+                runs.append((0.0, seg[0], seg[1]))
         if runs and content.kind == "pfd":
             if lab not in content._labelled:  # one diamond per stream
                 content._labelled.add(lab)
-                _, xm, ym = max(runs)
+                _, a, b = max(runs)
                 rec.owner = Owner("line", e.id, "label")
-                _diamond(rec, xm, ym, lab, col)
+                r_ = 8.5 if len(lab) < 3 else 10.5
+                _diamond(rec, *_label_spot(e, sl, a, b, r_, r_, r_, e.path), lab, col)
         elif runs:
-            _, xm, ym = max(runs)
+            _, a, b = max(runs)
+            w_ = stringWidth(lab, FONT, 6.4) / 2 + 1
+            xm, ym = _label_spot(e, sl, a, b, w_, 11, -1)
             txt(rec, xm, ym - 4.5, lab, 6.4, FONT, "c", col)
     rec.owner = owner
 

@@ -162,6 +162,9 @@ def _zones(topo: Topology, hints: dict[str, Any], sides: dict[str, tuple[str, st
             continue
         zh = {"max_width": 2400.0, **s.hints, "inst_lines": dict(inst_lines), "stack": True}
         sl = layout_sheet(s.id, s.title, per_nodes[s.id], per_edges[s.id], zh)
+        from .repair import repair_sheet  # local import: repair uses this module's router
+
+        repair_sheet(sl)
         place_instruments(sl, topo)
         x0, y0, x1, y1 = sl.bbox
         dx, dy = -x0 + ZONE_PAD, -y0 + ZONE_PAD + ZONE_TITLE
@@ -469,9 +472,16 @@ def _clean(path: list[tuple[float, float]]) -> list[tuple[float, float]]:
     return out
 
 
-def onesheet_qa(os_: OneSheet) -> list[str]:
+def onesheet_qa(os_: OneSheet, prims: list | None = None) -> list[str]:
+    """Geometric problems of the one-sheet drawing; with the recorded ``prims`` also overlapping / crossed text."""
+    from . import geomqa
+
     out = list(os_.warnings)
     out += layout_qa(os_.layout)
+    sid = os_.layout.sheet_id
+    out += geomqa.describe(geomqa.check(os_.layout), sid)
+    if prims is not None:
+        out += geomqa.describe(geomqa.text_check(prims), sid)
     for i, a in enumerate(os_.zones):
         for b in os_.zones[i + 1:]:
             fa, fb = a.frame, b.frame

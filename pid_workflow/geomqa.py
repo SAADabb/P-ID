@@ -51,6 +51,10 @@ def seg_hits_rect(s: Seg, r: Rect, tol: float = 0.8) -> bool:
     return lo_x < r[2] - tol and r[0] + tol < hi_x + 0.01 and lo_y < r[3] - tol and r[1] + tol < hi_y + 0.01
 
 
+def _inside(p: tuple[float, float], r: Rect, pad: float = 0.0) -> bool:
+    return r[0] - pad <= p[0] <= r[2] + pad and r[1] - pad <= p[1] <= r[3] + pad
+
+
 def base_id(edge_id: str) -> str:
     """The pieces of one pipe drawn across zones share a base id (x, x~x, x~in)."""
     return edge_id.split("~")[0]
@@ -85,6 +89,27 @@ def check(sl: SheetLayout) -> list[Issue]:
                 if seg_hits_rect(s, r):
                     issues.append(Issue("crosses", e.id, oid, ((s[0] + s[2]) / 2, (s[1] + s[3]) / 2)))
                     break
+    # ---- instrument signal lines and leaders through symbols
+    for kind_, pts in sl.signals:
+        for a, b in zip(pts, pts[1:]):
+            s_ = (a[0], a[1], b[0], b[1])
+            for kind, oid, r in obs:
+                if kind == "instrument" and (_inside(a, r, 12) or _inside(b, r, 12)):
+                    continue  # its own bubbles
+                if kind == "valve" and (_inside(b, r, 30) or _inside(a, r, 30)):
+                    continue  # the actuator it drives
+                if seg_hits_rect(s_, r):
+                    issues.append(Issue("signal_crosses", "", f"{kind_} signal / {oid}", ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)))
+                    break
+    for p in sl.instruments:
+        for a, b in zip(p.leader, p.leader[1:]):
+            s_ = (a[0], a[1], b[0], b[1])
+            for kind, oid, r in obs:
+                if oid == p.inst.id or (kind == "equipment" and (p.inst.target or {}).get("ref") == oid):
+                    continue
+                if seg_hits_rect(s_, r):
+                    issues.append(Issue("leader_crosses", "", f"{p.inst.id} / {oid}", ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)))
+                    break
     # ---- pipes on top of each other (same track, overlapping run)
     buckets: dict[tuple[str, int], list[tuple[str, float, float, float]]] = defaultdict(list)
     for e in sl.edges:
@@ -115,7 +140,7 @@ def check(sl: SheetLayout) -> list[Issue]:
                 issues.append(Issue("symbol_overlap", "", f"{i} / {i2}", ((r[0] + r[2]) / 2, (r[1] + r[3]) / 2)))
     uniq: dict[tuple, Issue] = {}
     for it in issues:
-        key = (it.kind, it.edge, it.other) if it.kind != "symbol_overlap" else (it.kind, tuple(sorted(it.other.split(" / "))))
+        key = (it.kind, it.edge, it.other) if it.kind not in ("symbol_overlap",) else (it.kind, tuple(sorted(it.other.split(" / "))))
         uniq.setdefault(key, it)
     return list(uniq.values())
 
@@ -127,6 +152,60 @@ def describe(issues: list[Issue], sheet: str) -> list[str]:
             out.append(f"{sheet}: line {it.edge} passes through {it.other}")
         elif it.kind == "overlap":
             out.append(f"{sheet}: lines {it.edge} and {it.other} overlap")
+        elif it.kind == "signal_crosses":
+            out.append(f"{sheet}: {it.other.split(' / ')[0]} line passes through {it.other.split(' / ')[1]}")
+        elif it.kind == "leader_crosses":
+            out.append(f"{sheet}: leader of {it.other.split(' / ')[0]} passes through {it.other.split(' / ')[1]}")
+        elif it.kind == "text":
+            out.append(f"{sheet}: text overlap: {it.other}")
         else:
             out.append(f"{sheet}: symbols overlap: {it.other}")
     return sorted(out)
+
+
+# ----------------------------------------------------------------------------------- text
+def text_check(prims: list, sheet: str = "ONE") -> list[Issue]:
+    """Text on the drawing field that overlaps other text, a symbol, or is crossed by a pipe (recorded primitives)."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    texts, pipes, syms = [], [], defaultdict(list)
+    for p in prims:
+        o = p.owner
+        if o.kind in ("sheet", "zone") or o.role == "border":
+            continue
+        if p.kind == "text":
+            try:
+                w = stringWidth(p.text, p.font, p.size)
+            except Exception:  # noqa: BLE001 - unknown font: estimate
+                w = 0.5 * p.size * len(p.text)
+            x, y = p.pts[0]
+            x0 = x - (w / 2 if p.align == "c" else (w if p.align == "r" else 0))
+            texts.append(((o.kind, o.ref), (x0, y - 0.75 * p.size, x0 + w, y + 0.2 * p.size), p.text))  # y down
+        elif (o.role == "line" or o.kind == "manifold") and p.kind == "poly":
+            pipes.append((o.ref, p.pts))  # pipes and header bars
+        elif o.role == "symbol":
+            syms[(o.kind, o.ref)].append(p)
+    sym_rects = []
+    for key, ps in syms.items():
+        xs = [q[0] for p in ps for q in p.pts] + [p.pts[0][0] + s * p.r for p in ps if p.kind == "circle" for s in (-1, 1)]
+        ys = [q[1] for p in ps for q in p.pts] + [p.pts[0][1] + s * p.r for p in ps if p.kind == "circle" for s in (-1, 1)]
+        sym_rects.append((key, (min(xs), min(ys), max(xs), max(ys))))
+    out: list[Issue] = []
+
+    def hit(a: Rect, b: Rect, tol: float = 0.4) -> bool:
+        return a[0] < b[2] - tol and b[0] < a[2] - tol and a[1] < b[3] - tol and b[1] < a[3] - tol
+
+    for i, (ka, ra, ta) in enumerate(texts):
+        for kb, rb, tb in texts[i + 1:]:
+            if ka != kb and hit(ra, rb):
+                out.append(Issue("text", "", f"'{ta}' / '{tb}'", ((ra[0] + ra[2]) / 2, (ra[1] + ra[3]) / 2)))
+        for kb, rb in sym_rects:
+            if kb != ka and hit(ra, rb, 0.8):
+                out.append(Issue("text", "", f"'{ta}' / symbol {kb[1]}", ((ra[0] + ra[2]) / 2, (ra[1] + ra[3]) / 2)))
+        for ref, pts in pipes:
+            if ka in (("line", ref), ("manifold", ref)):
+                continue
+            if any(seg_hits_rect((a[0], a[1], b[0], b[1]), ra, 0.6) for a, b in zip(pts, pts[1:])):
+                out.append(Issue("text", "", f"'{ta}' / line {ref}", ((ra[0] + ra[2]) / 2, (ra[1] + ra[3]) / 2)))
+                break
+    return out

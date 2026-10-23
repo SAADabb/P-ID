@@ -44,8 +44,10 @@ fixed texts of the sheets (legend, notes headings, title block labels) and the e
 ## Known limits (say them to the user)
 
 * The A3 review pack is a by-product; its geometric problems are informational - the deliverables are the two A0
-  sheets. The overlap check covers symbols, valves, instruments and lines through equipment; text-on-text and
-  signal-line overlaps are not detected - look at the zooms.
+  sheets. On those, the check covers pipes through symbols, header bars, valves, bubbles or equipment text; shared
+  pipe tracks; overlapping symbols; signal lines and leaders through symbols; and text on text, on a symbol or
+  crossed by a pipe. Offending pipes are re-routed automatically. It cannot judge readability (crowding, long
+  detours, a tag that is clear but far from its valve) - look at the zooms.
 
 * Extraction is AI work; check the interpretations listed in the holds.
 * Proteus XSD validation is not available offline; the XML is reloaded with pyDEXPI and compared with the topology.
