@@ -387,7 +387,7 @@ def _layout_component(sheet_id: str, title: str, nodes: dict[str, MNode], edges:
     pref += sorted([n for n in ids if indeg[n] == 0])
     back = _break_cycles(ids, fwd, pref)
     for e in sl.edges:
-        if (e.src[0], e.dst[0]) in back:
+        if (e.src[0], e.dst[0]) in back or nodes[e.dst[0]].symbol == "t_out_l" or nodes[e.src[0]].symbol == "t_in_r":
             e.back = True
     fedges = [e for e in sl.edges if not e.back]
 
@@ -416,6 +416,19 @@ def _layout_component(sheet_id: str, title: str, nodes: dict[str, MNode], edges:
     lo = min(layer.values()) if layer else 0
     for n in layer:
         layer[n] -= lo
+    # one-sheet mode: connection terminals sit on the outer columns of their zone
+    t_in = [n for n in ids if nodes[n].kind == "terminal" and nodes[n].symbol in ("t_in", "t_out_l")]
+    t_out = [n for n in ids if nodes[n].kind == "terminal" and nodes[n].symbol in ("t_out", "t_in_r")]
+    others = [n for n in ids if n not in t_in and n not in t_out]
+    if (t_in or t_out) and others:
+        base = min(layer[n] for n in others) - (1 if t_in else 0)
+        for n in others:
+            layer[n] -= base
+        top = max(layer[n] for n in others)
+        for n in t_in:
+            layer[n] = 0
+        for n in t_out:
+            layer[n] = top + 1
     for n in ids:
         nodes[n].layer = layer[n]
 
@@ -864,8 +877,17 @@ def _layout_component(sheet_id: str, title: str, nodes: dict[str, MNode], edges:
     top = min([n.y - n.h / 2 - n.top_h for n in nodes.values()] + [n.span[0] for n in nodes.values() if n.kind == "manifold"] or [0])
     bot = max([n.y + n.band / 2 for n in nodes.values()] or [0])
     k_top = k_bot = 0
+    real = [n for n in nodes.values() if n.kind != "terminal"] or list(nodes.values())
+    left_edge = min(n.x - n.w / 2 for n in real) - 40
+    right_edge = max(n.x + n.w / 2 for n in real) + 40
+    slotted = {(e.src[0], e.src[1]) for e in fedges} | {(e.dst[0], e.dst[1]) for e in fedges}
     for e in sorted([z for z in sl.edges if z.back], key=lambda z: z.id):
         a, b = nodes[e.src[0]], nodes[e.dst[0]]
+        for n_, port in ((a, e.src[1]), (b, e.dst[1])):  # a manifold branch used only by a return edge gets its own slot
+            if n_.kind == "manifold" and port != "common" and (n_.id, port) not in slotted:
+                slotted.add((n_.id, port))
+                n_.port_y[port] = n_.span[1] + 30.0
+                n_.span = (n_.span[0], n_.span[1] + 30.0)
         ya = a.port_y.get(e.src[1], a.y) if a.kind == "manifold" else a.y + a.ports.get(e.src[1], ("R", 0))[1]
         yb = b.port_y.get(e.dst[1], b.y) if b.kind == "manifold" else b.y + b.ports.get(e.dst[1], ("L", 0))[1]
         xa = a.x if a.kind == "manifold" else a.port_xy(e.src[1])[0]
@@ -880,6 +902,16 @@ def _layout_component(sheet_id: str, title: str, nodes: dict[str, MNode], edges:
         x1 = xa + 22 + (k_bot + k_top) * 3
         x2 = xb - 22 - (k_bot + k_top) * 3
         e.path = _simplify([(xa, ya), (x1, ya), (x1, lane), (x2, lane), (x2, yb), (xb, yb)])
+        # one-sheet zones: a connection to a zone on the other side leaves / enters along the lane
+        room = len(e.chain) * SYM_W
+        if b.symbol == "t_out_l":
+            b.x, b.y = left_edge, lane
+            x1 += room
+            e.path = _simplify([(xa, ya), (x1, ya), (x1, lane), (left_edge, lane)])
+        elif a.symbol == "t_in_r":
+            a.x, a.y = right_edge, lane
+            x2 -= room
+            e.path = _simplify([(right_edge, lane), (x2, lane), (x2, yb), (xb, yb)])
     sl.lanes = k_top + k_bot
 
     # ---- inline symbol placement
@@ -983,7 +1015,9 @@ def layout_sheet(sheet_id: str, title: str, nodes: dict[str, MNode], edges: list
     total_w = sum(s_.bbox[2] - s_.bbox[0] + gap_x for s_ in subs)
     cands = sorted({widest, float(hints.get("max_width", MAX_ROW_W)), *[widest + k * 150.0 for k in range(1, 40) if widest + k * 150.0 <= total_w]})
     best = None
-    for mw in cands:
+    if hints.get("stack"):  # one-sheet zone: terminals must stay on the zone edges
+        best = (1.0, _pack_zone(subs, gap_x, gap_y))
+    for mw in cands if best is None else []:
         placed, W, H = pack(mw)
         score = min(PAGE_W / max(W, 1.0), PAGE_H / max(H, 1.0), 1.4)  # drawing scale on the page
         if best is None or score > best[0] + 1e-6:
@@ -998,6 +1032,53 @@ def layout_sheet(sheet_id: str, title: str, nodes: dict[str, MNode], edges: list
     ys = [s_.bbox[1] for s_ in subs] + [s_.bbox[3] for s_ in subs]
     out.bbox = (min(xs), min(ys), max(xs), max(ys)) if xs else (0, 0, 1, 1)
     return out
+
+
+def _pack_zone(subs: list[SheetLayout], gap_x: float, gap_y: float) -> list[tuple[SheetLayout, float, float]]:
+    """Rows of components whose zone terminals end up on the zone's left / right edge.
+
+    A component with terminals on both sides gets a row of its own; a left-only and a right-only
+    component share a row (left- and right-aligned); components without terminals fill a last shelf.
+    """
+    def sides(sub: SheetLayout) -> tuple[bool, bool]:
+        syms = {n.symbol for n in sub.nodes.values() if n.kind == "terminal"}
+        return bool(syms & {"t_in", "t_out_l"}), bool(syms & {"t_out", "t_in_r"})
+
+    def wh(sub: SheetLayout) -> tuple[float, float]:
+        return sub.bbox[2] - sub.bbox[0], sub.bbox[3] - sub.bbox[1]
+
+    both = [x for x in subs if sides(x) == (True, True)]
+    lefts = [x for x in subs if sides(x) == (True, False)]
+    rights = [x for x in subs if sides(x) == (False, True)]
+    free = [x for x in subs if sides(x) == (False, False)]
+    rows: list[tuple[SheetLayout | None, SheetLayout | None]] = [(x, None) for x in both]
+    for i in range(max(len(lefts), len(rights))):
+        rows.append((lefts[i] if i < len(lefts) else None, rights[i] if i < len(rights) else None))
+    W = max([wh(a)[0] for a, _ in rows if a is not None and b_none(_)] + [
+        (wh(a)[0] if a else 0) + (gap_x if a and b else 0) + (wh(b)[0] if b else 0) for a, b in rows] + [wh(x)[0] for x in free] + [1.0])
+    placed: list[tuple[SheetLayout, float, float]] = []
+    y = 0.0
+    for a, b in rows:
+        h = max(wh(a)[1] if a else 0, wh(b)[1] if b else 0)
+        if a is not None:
+            placed.append((a, -a.bbox[0], y - a.bbox[1]))
+        if b is not None:
+            placed.append((b, W - wh(b)[0] - b.bbox[0], y - b.bbox[1]))
+        y += h + gap_y
+    x, shelf = 0.0, 0.0
+    for f in free:
+        w, h = wh(f)
+        if x > 0 and x + w > W:
+            y += shelf + gap_y
+            x, shelf = 0.0, 0.0
+        placed.append((f, x - f.bbox[0], y - f.bbox[1]))
+        x += w + gap_x
+        shelf = max(shelf, h)
+    return placed
+
+
+def b_none(b: Any) -> bool:
+    return b is None
 
 
 def _simplify(pts: list[tuple[float, float]]) -> list[tuple[float, float]]:

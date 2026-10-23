@@ -19,6 +19,7 @@ class ReviewResult:
     approved: list[str]
     rejected: list[str]
     skipped: list[tuple[str, str]]
+    modifications: int = 0  # approved changes to source objects (line numbers, tags, nozzles, splits)
 
 
 def _generated(topo: Topology) -> dict[str, Any]:
@@ -63,7 +64,13 @@ def approve(topo: Topology, ids: list[str] | None = None, rule: str | None = Non
     for m in topo.modifications:  # keep modification records in step with approved objects
         if m.provenance.origin == "generated" and m.object_id in {d for d in done}:
             m.provenance.status = "approved"
-    return ReviewResult(done, [], skipped)
+    n_mod = 0
+    if ids is None:  # a rule's changes to source objects (tags, line numbers, nozzles, splits) go with it
+        for m in topo.modifications:
+            if (rule is None or m.provenance.rule == rule) and m.provenance.status == "pending_review":
+                m.provenance.status = "approved"
+                n_mod += 1
+    return ReviewResult(done, [], skipped, n_mod)
 
 
 def reject(topo: Topology, ids: list[str]) -> ReviewResult:

@@ -27,3 +27,12 @@ sheets:
   - id: S8
     title: "Steam users (LPF, BSST), thermal degasser and air-preheating coil"
     assign: ["mf.net_*", eq.lpf_k3, eq.lpf_messo, eq.lpf_gea, "eq.bsst_*", "eq.lpf_degasser*", bc.makeup]
+
+# One-sheet drawing: the groups above become plant-area zones of a single A0 sheet.  Rows read like the
+# process: water side on top (well water -> cooling loop -> heat pumps -> hot water), steam side below
+# (users <- headers <- CMV), LPF tanks under the hot-water area that feeds them.  Without this the
+# arrangement is searched automatically (pid_workflow/onesheet.py).
+onesheet:
+  rows:
+    - [S1, S2, S3, S4]
+    - [S8, S6, S5, S7]

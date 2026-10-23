@@ -77,6 +77,12 @@ rules:
     params:
       tag_untagged_source_control_valves: true
 
+  - id: lines.numbering
+    type: line_numbering
+    enabled: true
+    source: {section: "generic drafting convention (line numbers are not given in the specification)", quote: null}
+    params: {}
+
   - id: unresolved.generated
     type: unresolved_summary
     enabled: true

@@ -68,6 +68,7 @@ class Enricher:
             "control_valve_manifold": self.rule_control_valve_manifold,
             "vessel_auxiliaries": self.rule_vessel_auxiliaries,
             "control_loop": self.rule_control_loop,
+            "line_numbering": self.rule_line_numbering,
             "tagging": self.rule_tagging,
             "unresolved_summary": self.rule_unresolved_summary,
         }
@@ -686,6 +687,50 @@ class Enricher:
                 continue
             pref = tg["by_function"].get(c.function or "", "XV")
             self._set_tag(rule, c, f"{pref}{sep}{take(pref)}", "valve")
+
+    def rule_line_numbering(self, rule: Rule) -> None:
+        """One proposed line number per logical line: <service code>-<sequence> (no size or class: never invented)."""
+        cfg = self.policy.generic.get("line_numbering", {})
+        codes: list[dict[str, Any]] = cfg.get("codes", [])
+        start = int(cfg.get("start", 101))
+        sep = cfg.get("separator", "-")
+
+        def code_of(service: str) -> str | None:
+            for c in codes:
+                if service.lower().startswith(c["prefix"].lower()):
+                    return c.get("code")
+            return None
+
+        groups: dict[str, list[ProcessLine]] = {}
+        for ln in self.t.process_lines:
+            groups.setdefault(logical(ln), []).append(ln)
+        used: dict[str, set[int]] = {}
+        for lines in groups.values():
+            for ln in lines:
+                m = re.match(r"^([A-Z]+)" + re.escape(sep) + r"(\d+)$", ln.line_number or "")
+                if m:
+                    used.setdefault(m.group(1), set()).add(int(m.group(2)))
+        order = sorted(groups.items(), key=lambda kv: (code_of(kv[1][0].service) or "", kv[0]))
+        for lg, lines in order:
+            code = code_of(lines[0].service)
+            if code is None:
+                continue
+            have = next((ln.line_number for ln in lines if ln.line_number), None)
+            if have is None:
+                nums = used.setdefault(code, set())
+                n = start
+                while n in nums:
+                    n += 1
+                nums.add(n)
+                have = f"{code}{sep}{n}"
+            for ln in lines:
+                if ln.line_number:
+                    continue
+                if ln.provenance.origin == "source":
+                    self._record_mod(rule, ln.id, "line_number", None, have, "proposed line number (service code + sequence); size and piping class are not given and are left out")
+                ln.line_number = have
+                ln.line_number_status = "proposed"
+                self.note(rule.id, "added", ln.id, f"proposed line number {have}")
 
     def _set_tag(self, rule: Rule, obj: Component | Instrument, tag: str, what: str) -> None:
         if obj.provenance.origin == "source":

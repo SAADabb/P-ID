@@ -231,8 +231,13 @@ def summary_md(topo: Topology, val: ValidationReport, rt: RoundTripReport | None
     return "\n".join(lines)
 
 
-def layout_md(qa: dict[str, list[str]], scales: dict[str, float]) -> str:
+def layout_md(qa: dict[str, list[str]], scales: dict[str, float], sheet_qa: list[str] | None = None, sheet_scale: float = 0.0) -> str:
     lines = ["# Layout checks", "", "Geometric checks on the computed drawings (no coordinates are stored in the topology).", ""]
+    if sheet_qa is not None:
+        lines += ["## One-sheet P&ID (A0)", "", f"Drawing scale on the A0 field: {sheet_scale:.2f} (1.00 = symbol and text sizes as designed). "
+                  f"Problems: {len(sheet_qa)}.", ""]
+        lines += [f"- {m}" for m in sheet_qa]
+        lines += ["", "## Review pack (A3 sheets per area)", ""]
     rows = [[sid, f"{scales.get(sid, 0):.2f}", str(len(v))] for sid, v in qa.items()]
     lines += [_md_table(["Sheet", "Drawing scale on A3", "Problems"], rows), ""]
     for sid, v in qa.items():

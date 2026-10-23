@@ -55,3 +55,20 @@ tagging:
     control: PCV
   notes:
     NRV: "ISA 5.1 defines no check-valve letter code; 'NRV' is a placeholder convention to be confirmed."
+
+line_numbering:          # proposed line numbers: <code>-<sequence>; size and piping class are never invented
+  separator: "-"
+  start: 101
+  codes:                 # first matching service prefix wins; services without a code are not numbered
+    - {prefix: "Steam 8 bar",     code: "HS"}
+    - {prefix: "Steam 4 bar",     code: "MS"}
+    - {prefix: "Steam 1 bar",     code: "LS"}
+    - {prefix: "Flash steam",     code: "FS"}
+    - {prefix: "Steam",           code: "ST"}
+    - {prefix: "Hot water RCUA",  code: "HR"}
+    - {prefix: "Hot water",       code: "HW"}
+    - {prefix: "Internal loop",   code: "IL"}
+    - {prefix: "Cooling water",   code: "CW"}
+    - {prefix: "Well water",      code: "WW"}
+    - {prefix: "Treated make-up", code: "TW"}
+    - {prefix: "Process fluid",   code: "PF"}

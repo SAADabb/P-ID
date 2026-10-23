@@ -7,7 +7,7 @@ Source: `Cahier des Charges P&ID Consolidé.pdf` (3 pages). The AI extracted it 
 ## Status
 
 - Structural validation: **PASS** (0 errors, 0 warnings)
-- Proteus XML round trip: **PASS** (12 checks)
+- Proteus XML round trip: **PASS** (17 checks)
 - Layout checks: **clean** (0 geometric problems on 8 sheets)
 
 ## The model
@@ -22,6 +22,7 @@ Source: `Cahier des Charges P&ID Consolidé.pdf` (3 pages). The AI extracted it 
 | Control loops | 1 |
 | Pending review | 181 |
 | Open points | 24 |
+| Decisions needed | 14 holds + 8 rule approvals (10 datasheet items do not change the drawing) |
 | Enrichment idempotent | yes |
 
 ## What to review first

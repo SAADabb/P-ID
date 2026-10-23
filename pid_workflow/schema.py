@@ -146,6 +146,7 @@ class ProcessLine(_Obj):
     logical_line: str | None = None  # survives splitting; defaults to ``id``
     split_from: str | None = None
     line_number: str | None = None
+    line_number_status: TagStatus = "none"
     header: bool = False
     properties: dict[str, Attr] = Field(default_factory=dict)
 

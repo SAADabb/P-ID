@@ -16,6 +16,11 @@
 | pyDEXPI loader: equipment classes, tags and nozzle counts | PASS | 45 items; all match |
 | pyDEXPI loader: piping systems/segments and instrumentation counts | PASS | 104 segments (XML 104), 21 instrument functions, 1 loops |
 | pyDEXPI loader: no errors when re-reading the XML | PASS | 0 error(s), 3 warning(s) |
+| pyDEXPI loads the Drawing (Diagram with A0 extent) | PASS | PID-LPF-BSST-001: 1189 × 841 mm |
+| every placed symbol is a shape usage that resolves in the ShapeCatalogue | PASS | 132 shape usages (written 132), 0 unresolved, 20 catalogue shapes |
+| every routed pipe is a connector line | PASS | 178 connector lines (written 178) |
+| tags and texts are labels | PASS | 205 labels loaded (expected 205); the 114 line-number labels sit on their PipingNetworkSegment as DEXPI specifies, which pyDEXPI 1.2 does not read back |
+| pyDEXPI loader: no errors with graphics | PASS | 0 error(s) |
 
 ## Loader warnings
 

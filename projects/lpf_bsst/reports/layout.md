@@ -2,6 +2,16 @@
 
 Geometric checks on the computed drawings (no coordinates are stored in the topology).
 
+## One-sheet P&ID (A0)
+
+Drawing scale on the A0 field: 0.84 (1.00 = symbol and text sizes as designed). Problems: 3.
+
+- route of ln.032/1 shares a track
+- route of ln.037 shares a track
+- route of ln.067 shares a track
+
+## Review pack (A3 sheets per area)
+
 | Sheet | Drawing scale on A3 | Problems |
 |---|---|---|
 | S1 | 0.95 | 0 |

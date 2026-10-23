@@ -16,9 +16,15 @@ def _print_run(res) -> None:  # noqa: ANN001
     print(f"validation      : {'PASS' if res.validation.ok else 'FAIL'} ({len(res.validation.errors)} errors, {len(res.validation.warnings)} warnings)")
     print(f"enrichment      : idempotent={res.idempotent}, {pending} proposals pending review")
     print(f"proteus xml     : round trip {'PASS' if res.roundtrip.ok else 'FAIL'} ({len(res.roundtrip.checks)} checks)")
+    if res.onesheet is not None:
+        print(f"one-sheet P&ID  : A0, {len(res.onesheet.zones)} plant areas, scale {res.sheet_scale:.2f}, {len(res.sheet_qa or [])} geometric problems")
+        g = res.graphics or {}
+        print(f"dexpi graphics  : {g.get('placed', 0)} symbols ({g.get('shapes', 0)} catalogue shapes), {g.get('centerlines', 0)} routed pipes, {g.get('labels', 0)} labels")
     bad = sum(len(v) for v in res.qa.values())
-    print(f"layout          : {len(res.layout.sheets)} sheets, {bad} geometric problems")
-    print(f"open points     : {sum(1 for u in t.unresolved_requirements if u.status == 'open')}")
+    print(f"review pack     : {len(res.layout.sheets)} A3 sheets, {bad} geometric problems")
+    if res.register is not None:
+        r = res.register
+        print(f"decisions       : {len(r.holds)} holds + {len(r.rules)} rule approvals ({len(r.datasheet)} datasheet items)")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -44,7 +50,8 @@ def main(argv: list[str] | None = None) -> int:
             res = run_all(args.project, rebuild=args.rebuild, render=not args.no_pdf)
             _print_run(res)
             proj = load_project(args.project)
-            print(f"\nwrote {proj.pdf_path if not args.no_pdf else '(no pdf)'}\n      {proj.xml_path}\n      {proj.reports}/ (summary.md first)")
+            files = [proj.sheet_path, proj.xml_path, proj.lists_path, proj.reports / "decision_register.md", proj.svg_path, proj.pdf_path]
+            print("\nwrote " + "\n      ".join(str(f) for f in files if f.exists()))
             return 0 if (res.validation.ok and res.roundtrip.ok) else 1
         proj = load_project(args.project)
         topo = load_working(proj)
