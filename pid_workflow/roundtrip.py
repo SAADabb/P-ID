@@ -68,7 +68,16 @@ def _dexpi(el: etree._Element, name: str) -> str | None:
 
 
 def verify_roundtrip(topo: Topology, xml_path: str | Path) -> RoundTripReport:
+    """Verify the exported XML; a damaged file yields failing checks, never an exception."""
     rep = RoundTripReport()
+    try:
+        _verify(topo, xml_path, rep)
+    except Exception as exc:  # noqa: BLE001 - a corrupt file must be reported, not crash the pipeline
+        rep.add("XML could be read and compared completely", False, f"{type(exc).__name__}: {exc}")
+    return rep
+
+
+def _verify(topo: Topology, xml_path: str | Path, rep: RoundTripReport) -> RoundTripReport:
     xml_path = Path(xml_path)
     tree = etree.parse(str(xml_path))
     root = tree.getroot()

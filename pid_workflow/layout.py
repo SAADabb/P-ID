@@ -33,6 +33,7 @@ V_GAP = 14.0      # vertical gap between nodes
 LABEL_H = 30.0    # label band under an equipment symbol
 LANE_GAP = 16.0
 MAX_ROW_W = 1290.0  # sheets wider than this are folded into rows
+PAGE_W, PAGE_H = 1100.0, 560.0  # usable drawing area of an A3 sheet, used to pick the best arrangement
 
 # ---------------------------------------------------------------------------- symbols
 _DIMS: dict[str, tuple[float, float]] = {
@@ -960,19 +961,35 @@ def layout_sheet(sheet_id: str, title: str, nodes: dict[str, MNode], edges: list
         sub_edges = [e for e in edges if e.src[0] in gs and (e.stub or e.dst[0] in gs)]
         subs.append(_layout_component(sheet_id, title, {n: nodes[n] for n in g}, sub_edges, hints))
     out = SheetLayout(sheet_id=sheet_id, title=title)
-    max_w = float(hints.get("max_width", MAX_ROW_W))
     gap_x, gap_y = 60.0, 44.0
-    cur_x = cur_y = shelf_h = 0.0
-    placed: list[tuple[SheetLayout, float, float]] = []
-    for sub in subs:
-        x0, y0, x1, y1 = sub.bbox
-        w, h = x1 - x0, y1 - y0
-        if cur_x > 0 and cur_x + w > max_w:
-            cur_y += shelf_h + gap_y
-            cur_x, shelf_h = 0.0, 0.0
-        _shift(sub, cur_x - x0, cur_y - y0)
-        cur_x += w + gap_x
-        shelf_h = max(shelf_h, h)
+
+    def pack(max_w: float) -> tuple[list[tuple[SheetLayout, float, float]], float, float]:
+        cur_x = cur_y = shelf_h = 0.0
+        placed: list[tuple[SheetLayout, float, float]] = []
+        width = 0.0
+        for sub in subs:
+            x0, y0, x1, y1 = sub.bbox
+            w, h = x1 - x0, y1 - y0
+            if cur_x > 0 and cur_x + w > max_w:
+                cur_y += shelf_h + gap_y
+                cur_x, shelf_h = 0.0, 0.0
+            placed.append((sub, cur_x - x0, cur_y - y0))
+            cur_x += w + gap_x
+            width = max(width, cur_x - gap_x)
+            shelf_h = max(shelf_h, h)
+        return placed, width, cur_y + shelf_h
+
+    widest = max((s_.bbox[2] - s_.bbox[0] for s_ in subs), default=1.0)
+    total_w = sum(s_.bbox[2] - s_.bbox[0] + gap_x for s_ in subs)
+    cands = sorted({widest, float(hints.get("max_width", MAX_ROW_W)), *[widest + k * 150.0 for k in range(1, 40) if widest + k * 150.0 <= total_w]})
+    best = None
+    for mw in cands:
+        placed, W, H = pack(mw)
+        score = min(PAGE_W / max(W, 1.0), PAGE_H / max(H, 1.0), 1.4)  # drawing scale on the page
+        if best is None or score > best[0] + 1e-6:
+            best = (score, placed)
+    for sub, dx, dy in best[1] if best else []:
+        _shift(sub, dx, dy)
         out.nodes.update(sub.nodes)
         out.edges += sub.edges
         out.lanes += sub.lanes
@@ -1252,12 +1269,29 @@ def build_overview(topo: Topology, specs: list[SheetSpec], macro: Macro, cross: 
     g.add_nodes_from(sp.id for sp in specs)
     for (a, b), svcs in pair.items():
         g.add_edge(a, b, weight=len(svcs))
-    pos = nx.spring_layout(g, seed=11, k=1.6, iterations=300) if len(specs) > 1 else {specs[0].id: (0.0, 0.0)}
-    pts = {k: (float(v[0]), float(v[1])) for k, v in pos.items()}
-    ids_ = sorted(pts)
-    dmin = min((math.dist(pts[a_], pts[b_]) for i, a_ in enumerate(ids_) for b_ in ids_[i + 1:]), default=1.0) or 1.0
-    k = 300.0 / dmin  # keeps every pair of 200 x 62 boxes clear of each other
-    boxes = {sid: (p_[0] * k, p_[1] * k, 200.0, 62.0) for sid, p_ in pts.items()}
+    order = {sp.id: i for i, sp in enumerate(specs)}
+    depth: dict[str, int] = {}
+    for comp in nx.connected_components(g):  # BFS columns from the lowest-numbered sheet of each component
+        root = min(comp, key=lambda n: order[n])
+        for n, d in nx.single_source_shortest_path_length(g, root).items():
+            depth[n] = d
+    cols: dict[int, list[str]] = defaultdict(list)
+    for sid in sorted(depth, key=lambda n: order[n]):
+        cols[depth[sid]].append(sid)
+    boxes: dict[str, tuple[float, float, float, float]] = {}
+    per_row = 3  # columns per row: the chain of sheets is folded so the boxes stay large
+    row_h: dict[int, int] = defaultdict(int)
+    for d, ids in cols.items():
+        row_h[d // per_row] = max(row_h[d // per_row], len(ids))
+    row_y: dict[int, float] = {}
+    y = 0.0
+    for r in sorted(row_h):
+        row_y[r] = y + (row_h[r] - 1) * 60.0
+        y += row_h[r] * 120.0 + 80.0
+    for d, ids in cols.items():
+        for k, sid in enumerate(ids):
+            col = d % per_row if (d // per_row) % 2 == 0 else per_row - 1 - d % per_row  # boustrophedon keeps neighbours adjacent
+            boxes[sid] = (col * 440.0, row_y[d // per_row] + (k - (len(ids) - 1) / 2) * 120.0, 210.0, 64.0)
     links = []
     for (a, b), svcs in sorted(pair.items()):
         links.append((a, b, [(svc, v[0], v[1]) for svc, v in sorted(svcs.items())]))

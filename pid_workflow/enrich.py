@@ -427,15 +427,26 @@ class Enricher:
                 self.note(rule.id, "blocked", cv.id, f"{lab}: control valve is not connected on both sides (prerequisite missing)")
                 continue
             why = lambda t: self._expl(rule, t)  # noqa: E731
+            def dedicated(chain: list[Component]) -> list[Component]:
+                """Leading isolation valves that belong to this control valve (source-given or generated for it)."""
+                out: list[Component] = []
+                for c_ in chain:
+                    if c_.function == "isolation" and (c_.provenance.origin == "source" or cv.id in c_.provenance.triggers):
+                        out.append(c_)
+                    else:
+                        break
+                return out
+
             up_chain, _, _ = self.trace(cv.id, "in")
             dn_chain, _, _ = self.trace(cv.id, "out")
-            # ---- isolation valves adjacent to the control valve
+            # ---- isolation valves adjacent to the control valve (valves that serve other purposes, e.g. a pump's
+            #      discharge isolation, are not reused: closing them would not isolate the control valve alone)
             for side, chain, spec_key, port, idn in (("upstream", up_chain, "upstream_isolation", "in", "iso_up"),
                                                       ("downstream", dn_chain, "downstream_isolation", "out", "iso_dn")):
                 if f"pc.gen.{sl}.{idn}" in self.rejected:
                     self.note(rule.id, "skipped", f"pc.gen.{sl}.{idn}", f"{lab}: {side} isolation valve was rejected by the reviewer")
                     continue
-                ex = self._find_function(chain, "isolation") or self.comp.get(f"pc.gen.{sl}.{idn}")
+                ex = (dedicated(chain) or [None])[0] or self.comp.get(f"pc.gen.{sl}.{idn}")
                 if ex is not None:
                     self._add_trigger(ex, cv.id)
                     self.note(rule.id, "reused", ex.id, f"{lab}: existing {side} isolation valve reused")
@@ -447,19 +458,19 @@ class Enricher:
                 line = self.by_to[(cv.id, "in")] if port == "in" else self.by_from[(cv.id, "out")]
                 self.insert_inline(line, comp, rule, comp.provenance.explanation or "")
                 self.note(rule.id, "added", comp.id, f"{lab}: {side} isolation valve inserted")
-            # ---- bypass: split upstream of the outermost upstream valve, merge downstream of the outermost downstream valve
+            # ---- bypass: split upstream of the outermost isolation valve of this manifold, merge downstream of its outermost one
             if f"pc.gen.{sl}.byp_valve" in self.comp:
                 self.note(rule.id, "reused", f"pc.gen.{sl}.byp_valve", f"{lab}: bypass already present")
             else:
                 up_chain, _, _ = self.trace(cv.id, "in")
                 dn_chain, _, _ = self.trace(cv.id, "out")
-                up_line = self.by_to[((up_chain[-1].id if up_chain else cv.id), "in")]
-                dn_line = self.by_from[((dn_chain[-1].id if dn_chain else cv.id), "out")]
+                up_iso, dn_iso = dedicated(up_chain), dedicated(dn_chain)
+                up_line = self.by_to[((up_iso[-1].id if up_iso else cv.id), "in")]
                 service = up_line.service
                 t1 = self.make_manifold(f"pc.gen.{sl}.byp_split", f"Bypass split – {lab}", "split", rule, [cv.id],
                                         why(f"bypass branch point upstream of {lab}."), cv.area, cv.id)
                 self.insert_manifold(up_line, t1, rule, t1.provenance.explanation or "")
-                dn_line = self.by_from[((dn_chain[-1].id if dn_chain else cv.id), "out")]
+                dn_line = self.by_from[((dn_iso[-1].id if dn_iso else cv.id), "out")]
                 t2 = self.make_manifold(f"pc.gen.{sl}.byp_merge", f"Bypass merge – {lab}", "merge", rule, [cv.id],
                                         why(f"bypass return point downstream of {lab}."), cv.area, cv.id)
                 self.insert_manifold(dn_line, t2, rule, t2.provenance.explanation or "")

@@ -208,6 +208,8 @@ def draw_equipment(c: canvas.Canvas, n: MNode, st: Style) -> None:
         return
     lifecycle = getattr(e, "lifecycle", "")
     suffix = {"existing": " [existing]", "modified": " [modified]", "future": " [future]"}.get(lifecycle, "")
+    if suffix.strip(" []") in name.lower():
+        suffix = ""
     if sym in ("tank", "vessel"):  # label inside the vessel, below the level line
         yy = y - h * 0.12 + 13
         if tag:
@@ -691,6 +693,17 @@ def draw_cover(c: canvas.Canvas, topo: Topology, layout: DrawingLayout, facts: d
         f"DEXPI Proteus XML round trip: {'PASS' if facts.get('roundtrip_ok') else 'FAIL'} — {facts.get('roundtrip_summary', '')}",
         f"Enrichment is idempotent: re-running it adds nothing ({facts.get('idempotent', 'checked in tests')}).",
     ], x, yl - 10, col_w)
+    # contents under the left column
+    c.setFont(FONT_B, 11)
+    c.setFillColor(INK)
+    c.drawString(x, yl - 12, "Contents")
+    yc = yl - 30
+    for pg, title in pages:
+        c.setFont(FONT, 9.5)
+        c.drawString(x, yc, title)
+        c.drawRightString(x + col_w, yc, pg)
+        yc -= 13.5
+    yl = yc
     # middle column: numbers
     xm = x + col_w + 30
     c.setFont(FONT_B, 11)
@@ -711,18 +724,8 @@ def draw_cover(c: canvas.Canvas, topo: Topology, layout: DrawingLayout, facts: d
         c.setLineWidth(0.4)
         c.line(xm, yy - 4, xm + 240, yy - 4)
         yy -= 16
-    # right column: index
-    xr = xm + 280
-    c.setFont(FONT_B, 11)
-    c.drawString(xr, y, "Contents")
-    yy = y - 18
-    for pg, title in pages:
-        c.setFont(FONT, 9.5)
-        c.drawString(xr, yy, title)
-        c.drawRightString(xr + 232, yy, pg)
-        yy -= 14
     # attention list
-    ya = min(yl, yy) - 24
+    ya = min(yl, yy) - 22
     c.setFont(FONT_B, 11)
     c.setFillColor(INK)
     c.drawString(x, ya, "Where an engineer should look first")
