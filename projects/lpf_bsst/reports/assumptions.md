@@ -36,7 +36,7 @@ These are in `source_topology.json` with `basis: interpreted`; the diagram draws
 | 1 | p.2 · 2. Lignes principales et réseaux de distribution | Pumps P-033..035 are the 'Pompage Secondaire (Boucle PAC)'; their position on the loop is not stated (see ur.loop_pump_position). |
 | 1 | p.2 · 2. Lignes principales et réseaux de distribution | Return leg of the internal loop is implied by the 55/50 °C regime, not drawn in the text. |
 | 5 | p.2 · 2. Lignes principales et réseaux de distribution | Return side of the 90/70 °C regime, collected in the 70 °C tank. |
-| 7 | p.2 · 2. Lignes principales et réseaux de distribution | “Eau de refroidissement DN 600 (minimum) Aller 20°C / Retour 31°C PAC (Évaporateurs) <-> Fermenteurs CF1-8” |
+| 7 | p.2 · 2. Lignes principales et réseaux de distribution | “Eau de refroidissement DN 600 (minimum) Aller 20°C / Retour 31°C PAC (Évaporateurs) <-> Fermenteurs” |
 | 4 | p.2 · 3. Consommateurs process et modifications | Users listed under BSST are supplied from the BSST Sud 4 bar network. |
 | 3 | p.2 · 3. Consommateurs process et modifications | Users listed under LPF are supplied from the LPF 4 bar network. |
 | 1 | p.2 · 3. Maintien en température (Cuves LPF) | Existing steam exchanger kept in parallel as backup for BACAN1. |

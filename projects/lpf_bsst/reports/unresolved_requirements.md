@@ -185,7 +185,7 @@ Nozzles added for drain, vent and level tapping have no nozzle number and no siz
 
 PAC 3A/3B are future equipment with no capacity, regime or connection data. They are drawn dashed (LifeCyclePhase=Future) and left unconnected.
 
-- **Source:** p.1 §1.2 Zone de Production de Chaleur (PAC) et Stockage — “PAC Extension (3A / 3B) 2 (cascade) – Équipement Futur (hors capacité)”
+- **Source:** p.1 §1.2 Zone de Production de Chaleur (PAC) et Stockage — “PAC Extension (3A / 3B) … Équipement Futur (hors capacité)”
 - **Affects:** `eq.hp_3a`, `eq.hp_3b`
 
 ### 23. `ur.hw_backup`

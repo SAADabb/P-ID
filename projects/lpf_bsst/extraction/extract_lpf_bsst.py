@@ -306,7 +306,7 @@ boundary("bc.darse", "Rejet vers DARSE (< 30 °C)", "out", "Well water", "ar.wel
 # ------------------------------------------------------------------- §1.2 heat pumps
 HP_PROC = S(1, SEC_12, "PAC Process (1A / 1B) 2 (parallèle) 5,6 MW/u 8 MW/u 31°C / 20°C 70°C / 90°C R1234ze")
 HP_RCUA = S(1, SEC_12, "PAC RCUA (2A / 2B) 2 (cascade) 3,8 MW/u 5,6 MW/u 31°C / 20°C 85°C / 105°C R1233zd/R1234ze")
-HP_FUT = S(1, SEC_12, "PAC Extension (3A / 3B) 2 (cascade) – Équipement Futur (hors capacité)")
+HP_FUT = S(1, SEC_12, "PAC Extension (3A / 3B) … Équipement Futur (hors capacité)")
 HP_NOZ = [("evap_in", "inlet"), ("evap_out", "outlet"), ("cond_in", "inlet"), ("cond_out", "outlet")]
 JCI = S(1, SEC_12, "Quatre pompes à chaleur centrifuges de marque Johnson Controls")
 for suf, lab in (("1a", "PAC 1A"), ("1b", "PAC 1B")):
@@ -380,7 +380,7 @@ for suf, tag in (("k3", "K3"), ("messo", "MESSO"), ("gea", "GEA")):
        nozzles=[("steam_in", "inlet")], attrs={"steam_supply_pressure": A(4, "bar eff.", P_K3)})
 P_DEG = S(2, SEC_3_DEG, "Instancier un nouvel échangeur sur la ligne d'eau d'appoint (Eau Traitée) réchauffant le fluide de 12°C à 80°C avant la bâche de 44 m3")
 eq("eq.lpf_degasser", "LPF thermal degasser with 44 m³ tank", "Vessel", "ar.lpf",
-   S(2, SEC_3, "Dégazeur thermique LPF Alimentation en 4 bar ou 1 bar eff. (à définir)", note="Degasser and its 44 m³ bâche modelled as one vessel."),
+   S(2, SEC_3, "Dégazeur thermique Alimentation en 4 bar ou 1 bar eff. (à définir)", note="Degasser and its 44 m³ bâche modelled as one vessel."),
    lifecycle="modified", nozzles=[("water_in", "inlet"), ("steam_in", "inlet")],
    attrs={"tank_volume": A(44, "m3", P_DEG)})
 eq("eq.lpf_degasser_hx", "New make-up water heater (12 → 80 °C)", "PlateHeatExchanger", "ar.lpf", P_DEG, lifecycle="new",
@@ -390,7 +390,7 @@ boundary("bc.makeup", "Treated make-up water (Eau Traitée, 12 °C)", "in", "Tre
          {"temperature": A(12, "°C", P_DEG)})
 
 # ----------------------------------------------------------------- §3 BSST consumers
-P_BS = S(2, SEC_3, "TGEA, TGEB, Finisseur Abaissement alimentation vapeur à 4 bar eff.; Tour ICF (Évaporateur) Abaissement alimentation vapeur à 4 bar eff.")
+P_BS = S(2, SEC_3, "TGEA, TGEB, Finisseur … Abaissement alimentation vapeur à 4 bar eff. … Tour ICF (Évaporateur)")
 for suf, tag, nm in (("tgea", "TGEA", "BSST steam user TGEA"), ("tgeb", "TGEB", "BSST steam user TGEB"),
                      ("finisher", "Finisseur", "BSST steam user Finisseur"), ("icf", "Tour ICF", "BSST steam user Tour ICF (evaporator)")):
     eq(f"eq.bsst_{suf}", nm, "CustomEquipment", "ar.bsst", P_BS, tag=None, lifecycle="modified",
@@ -431,7 +431,7 @@ line("mf.darse_m:common", "bc.darse:port", "Well water", S(1, SEC_11, "Rejet ver
      props={"temperature_max": A(30, "°C", S(1, SEC_11, "Rejet vers DARSE (< 30°C)"))})
 
 # ---- cooling-water loop (20 °C supply / 31 °C return)
-P_CW = S(2, SEC_2, "Eau de refroidissement DN 600 (minimum) Aller 20°C / Retour 31°C PAC (Évaporateurs) <-> Fermenteurs CF1-8")
+P_CW = S(2, SEC_2, "Eau de refroidissement DN 600 (minimum) Aller 20°C / Retour 31°C PAC (Évaporateurs) <-> Fermenteurs")
 CWSUP = {"nominal_diameter_min": A(600, "DN", P_CW), "temperature": A(20, "°C", P_CW)}
 CWRET = {"nominal_diameter_min": A(600, "DN", P_CW), "temperature": A(31, "°C", P_CW)}
 line("eq.tank_cold:outlet", "eq.fermenters:inlet", "Cooling water 20/31", P_CW, name="Cooling-water supply to fermenters (20 °C)", props=CWSUP)
@@ -505,7 +505,7 @@ line("bc.rcua_return:port", "eq.tank_rcua:inlet", "Hot water RCUA 85/105", dict(
      props={"temperature": A(85, "°C", P_RCH)})
 
 # ---- CMV and steam headers
-P_ST = S(2, SEC_2, "Vapeur Haute Pression DN 150 8 bar eff. CMV (Étage 3) -> Réseau BSST; Vapeur Moyenne Pression DN 300 4 bar eff. CMV (Étage 2) -> Réseaux LPF et BSST Sud; Vapeur Basse Pression DN 200 1 bar eff. CMV (Étage 1) -> Réseau BSST Nord")
+P_ST = S(2, SEC_2, "Vapeur Haute Pression … DN 150 … 8 bar eff. … CMV (Étage 3) -> Réseau BSST … Vapeur Moyenne Pression … DN 300 … 4 bar eff. … CMV (Étage 2) -> Réseaux LPF et BSST Sud … Vapeur Basse Pression … DN 200 … 1 bar eff. … CMV (Étage 1) -> Réseau BSST Nord")
 P_FS = S(1, SEC_13, "Alimentée par l'eau chaude à 90°C des PAC via un Flash Tank (70°C)", basis="interpreted",
          note="Vapour from the flash tank is the suction of CMV stage 1.")
 P_IS = S(1, SEC_13, "1 ligne de Compression Mécanique de Vapeur sur 3 étages", basis="interpreted",

@@ -2,7 +2,7 @@
 
 Drawing `PID-LPF-BSST-001` · revision A (draft for review) · **DRAFT — pending engineering review**
 
-Source: `Cahier des Charges P&ID Consolidé.pdf` (3 pages). The AI extracted it into `source_topology.json` (read-only snapshot, sha256 `ae617aac10a0…`); rules produced `working_topology.json`.
+Source: `Cahier des Charges P&ID Consolidé.pdf` (3 pages). The AI extracted it into `source_topology.json` (read-only snapshot, sha256 `917fb248fccf…`); rules produced `working_topology.json`.
 
 ## Status
 

@@ -512,6 +512,8 @@ class Exporter:
             "Pipe off-page connectors carry no connectorReference: the sheet references of the review PDF are not part of the model.",
             "Control valves carry no failAction, instruments no ranges, and the controller is a ProcessControlFunction without tuning data (not specified).",
             "Segment nominal diameter is exported only when the source gives a single DN; ranges and minima are text attributes.",
+            "The Proteus XML schema (XSD) is not available offline, so the file is not schema-validated; it is proven to load with pyDEXPI's own parser and "
+            "its graph is compared with the topology (see the round-trip report). Validate it in the target CAD tool before relying on it.",
         ]
 
 
