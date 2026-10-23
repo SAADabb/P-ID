@@ -132,6 +132,11 @@ Valves whose technology the source does not give use the explicitly marked gener
 
 New rule types are small methods on `Enricher` registered in `Enricher.handlers`.
 
+## Agent skill
+
+An agent can process a new specification by following `.claude/skills/pid-from-spec/SKILL.md` (with a runnable extraction template).
+The extraction step is still done by the agent, not by `pid run`.
+
 ## Known limits (details in `reports/export_limitations.md`)
 
 * **pyDEXPI 1.2.0 exports only equipment, nozzles and metadata to Proteus XML.** Piping and instrumentation are written by
