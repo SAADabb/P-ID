@@ -13,3 +13,7 @@ projects/*
 
 # exported project archives (downloads, not repository content)
 *.zip
+
+# built skill engine copy and packages (tools/build_skill.py)
+skills/*/scripts/engine/
+dist/

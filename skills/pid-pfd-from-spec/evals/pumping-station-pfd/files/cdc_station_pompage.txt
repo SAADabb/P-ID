@@ -1,0 +1,10 @@
+Cahier des charges – Station de pompage d'eau traitée
+
+1. Description
+La bâche de stockage T-10 (volume 30 m3) alimente deux pompes centrifuges P-11 et P-12 en configuration 1 + 1 secours, débit unitaire 40 m3/h.
+Les pompes refoulent vers le ballon tampon sous pression B-20 qui dessert le réseau usine (limite de fourniture).
+
+2. Exigences
+Chaque pompe sera équipée d'une vanne d'isolement à l'aspiration et au refoulement, d'un filtre à l'aspiration et d'un clapet anti-retour.
+Le ballon B-20 sera protégé par une soupape de sécurité.
+Les diamètres des lignes ne sont pas définis.

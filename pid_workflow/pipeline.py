@@ -109,6 +109,10 @@ def run_pfd(project: str | Path) -> PFDResult:
     return PFDResult(pfd, qa, drawing.scale, rt.ok and g_ok, [pdf_path, xml_path, xlsx, proj.reports / "pfd.md"])
 
 
+BUNDLED_POLICIES = Path(__file__).resolve().parents[1] / "policies"
+_BUNDLED = {"generic_policy": "generic.yaml", "rendering": "rendering.yaml"}
+
+
 class SourceChanged(RuntimeError):
     pass
 
@@ -119,7 +123,10 @@ class Project:
     cfg: dict[str, Any]
 
     def p(self, key: str) -> Path:
-        return (self.root / self.cfg[key]).resolve()
+        path = (self.root / self.cfg[key]).resolve()
+        if key in _BUNDLED and not path.exists():  # project outside the repository: use the policies shipped with the engine
+            path = BUNDLED_POLICIES / _BUNDLED[key]
+        return path
 
     @property
     def out(self) -> Path:

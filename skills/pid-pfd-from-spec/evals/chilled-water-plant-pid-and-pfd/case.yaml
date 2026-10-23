@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: chilled-water-plant-pid-and-pfd
+expected_outcome: |
+  A one-sheet A0 P&ID and a one-sheet A0 PFD of the chilled-water plant, a DEXPI Proteus XML file, the engineering
+  lists and a decision register. All checks of the engine pass (validation, DEXPI round trip, 0 geometric problems).
+  The pumps carry the auxiliaries section 7 of the specification asks for; the free-cooling exchanger position and the
+  3-way valve TV-301 are raised as open questions instead of being decided silently; no design value is invented.
+context:
+  scaffold_script: place-files.sh

@@ -1,0 +1,8 @@
+schema_version: "1.1"
+name: pumping-station-pfd
+expected_outcome: |
+  A one-sheet PFD with the storage tank T-10, the duty/stand-by pumps P-11/P-12 drawn once as a bank, the pressurised
+  vessel B-20 and the plant-network battery limit, numbered streams, and a stream table whose pump discharge flow is
+  the stated 40 m3/h. Line sizes are reported as not defined, not invented.
+context:
+  scaffold_script: place-files.sh

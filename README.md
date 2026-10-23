@@ -37,6 +37,18 @@ Project folders under `projects/` are local work and git-ignored.
 * **rule approvals** — one decision per rule (`pid review projects/<name> --approve-rule pump.auxiliaries`), not per object;
 * **datasheet data** — missing values that do not change the drawing.
 
+## Transferable skill
+
+`skills/pid-pfd-from-spec/` is the same workflow as a self-contained Claude skill (instructions, references and the
+engine bundled), usable in any project without this repository:
+
+```bash
+python tools/build_skill.py            # -> dist/pid-pfd-from-spec.skill (zip of the skill folder + engine)
+```
+Install it by uploading the `.skill` file in Claude, or unzip it into `~/.claude/skills/` (all projects) or
+`<project>/.claude/skills/` (one project). Then give the agent a specification and ask for the P&ID or PFD.
+Test cases for the skill are in `skills/pid-pfd-from-spec/evals/` (`claude plugin eval` format).
+
 ## What it covers
 
 * **Equipment**: every pyDEXPI equipment class (125), symbol chosen by class hierarchy; `CustomEquipment` + `symbol=` for the rest.
