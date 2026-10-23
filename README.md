@@ -16,7 +16,7 @@ Give a coding agent (Claude Code or any agent that reads `AGENTS.md`) a specific
 ## How to use it
 
 Open a coding agent in this repository and say: *"here is my cahier des charges `<file.pdf>`, make the P&ID"*.
-The agent follows `.claude/skills/pid-from-spec/SKILL.md`:
+The agent follows `skills/pid-pfd-from-spec/SKILL.md`:
 
 | Step | Who | Command / file |
 |---|---|---|

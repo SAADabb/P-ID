@@ -361,7 +361,9 @@ class Enricher:
         """
         p = rule.params
         bases = list(p.get("applies_to", []))
-        targets = [e for e in self.t.equipment if any(e.model_class == b or is_a(e.model_class, b) for b in bases)]
+        only, exclude = set(p.get("only") or []), set(p.get("exclude") or [])
+        targets = [e for e in self.t.equipment if any(e.model_class == b or is_a(e.model_class, b) for b in bases)
+                   and (not only or e.id in only) and e.id not in exclude]
         for e in targets:
             if e.lifecycle == "future":
                 self.note(rule.id, "skipped", e.id, "future equipment: not populated")

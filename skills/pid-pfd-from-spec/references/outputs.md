@@ -35,7 +35,17 @@ temperature, pressure, flow, size - only stated values (`≤/≥` limits, `*` = 
 `see n` = same stated value as stream n); stated control actions with a measurement drawn as their controller with the
 set point in the notes. No mass or heat balance is computed.
 
+## Language
+
+Names, services, quotes and your open-point texts appear as you write them (French documents → French names). The
+fixed texts of the sheets (legend, notes headings, title block labels) and the engine's generated texts
+(`ur.gen.*`, rule explanations) are in English.
+
 ## Known limits (say them to the user)
+
+* The A3 review pack is a by-product; its geometric problems are informational - the deliverables are the two A0
+  sheets. The overlap check covers symbols, valves, instruments and lines through equipment; text-on-text and
+  signal-line overlaps are not detected - look at the zooms.
 
 * Extraction is AI work; check the interpretations listed in the holds.
 * Proteus XSD validation is not available offline; the XML is reloaded with pyDEXPI and compared with the topology.

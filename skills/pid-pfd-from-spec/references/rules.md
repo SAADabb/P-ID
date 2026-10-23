@@ -47,6 +47,8 @@ their parameters to the text (e.g. PI vs PT, which classes), switch off what doe
 ```yaml
 params:
   applies_to: [Pump]                 # DEXPI classes; subclasses match (CentrifugalPump is a Pump)
+  only: [eq.bc01]                    # optional: restrict to these equipment ids
+  exclude: [eq.ve01]                 # optional: skip these
   include_existing: true             # existing/modified equipment is populated with a "verify" note
   inline:                            # per nozzle role, ordered OUTWARD from the nozzle, every nozzle with that role
     suction:   [{function: strainer}, {function: isolation, operation: manual}]
@@ -59,6 +61,15 @@ params:
     - {isa_code: PI, variable: pressure, name: Discharge pressure gauge, at: {line_of: discharge}}
     - {isa_code: LT, variable: level, at: {nozzle_role: level_tap}}
 ```
+A project rule without `source` is labelled like a pack rule ("not stated in the specification"). Conditions on line
+size (e.g. "butterfly valves from DN 100") cannot be encoded while sizes are unknown: keep generic valves and raise a
+`selection` open point.
+
+**Tag numbers** come from series per prefix in the engine's `policies/generic.yaml` (`tagging.series`: XV 201, NRV 251,
+PT 101, PI 151, TT 301, LT 401, PCV 501, PSV 601, STR 701, …), allocated in id order; a loop's transmitter, controller
+and valve share one number. They are proposals, not tied to equipment numbers; a project may change the series with
+`overrides: {tagging: {series: {PI: 101}}}`.
+
 `model_class` only when the document names the valve type; otherwise the generic class is used and listed as an open
 point.
 

@@ -45,6 +45,18 @@ s.save()                                                                       #
 ```
 
 `s.line`/`s.run` return the line id(s); keep them when a control requirement must name its measurement line.
+`s.bank(..., inlet_props={...}, outlet_props={...})` puts stated data (DN, temperature, flow) on the bank's two header
+lines; their ids are in `s.bank_lines["inlet"]` / `["outlet"]` after the call.
+
+## Control requirements
+
+`s.control(id, description, src, variable=…, measured_at_line=…, final_element=…, setpoint=…, controller_required=…,
+action=…)`. `variable`: `pressure`, `temperature`, `level`, `flow`, `differential pressure` (→ PIC, TIC, LIC, FIC,
+PDIC). `final_element` must be a valve id (`pc.*`). When the action is not a valve - speed variation of pumps, burner
+modulation, a package's own control - set `controller_required=False` and describe it in `action=` (e.g.
+`action="variable-speed drives of P-201..203"`): it is recorded and reported, no loop is drawn. A loop is only
+created when the text states automatic control *and* names the measurement point; otherwise raise an open point.
+`s.mode(...)` may have no requirements (description only).
 
 ## Ports and nozzles
 

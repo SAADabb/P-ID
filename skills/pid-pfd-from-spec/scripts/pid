@@ -4,7 +4,11 @@
 #   scripts/pid py <script.py>        run a Python script (e.g. the extraction) with the engine importable
 set -eu
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PYTHONPATH="$HERE/engine${PYTHONPATH:+:$PYTHONPATH}"
+ENGINE="$HERE/engine"
+if [ ! -d "$ENGINE/pid_workflow" ] && [ -d "$HERE/../../../pid_workflow" ]; then
+  ENGINE="$(cd "$HERE/../../.." && pwd)"   # skill used inside its source repository
+fi
+export PYTHONPATH="$ENGINE${PYTHONPATH:+:$PYTHONPATH}"
 PY="${PYTHON:-python3}"
 if [ "${1:-}" = "py" ]; then
   shift

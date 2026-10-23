@@ -3,7 +3,7 @@
 This repository turns an engineering specification (cahier des charges, PDF or text) into a draft P&ID:
 one A0 sheet, a DEXPI Proteus XML file with the same drawing, engineering lists and a decision register.
 
-**When the user gives you a specification, follow `.claude/skills/pid-from-spec/SKILL.md` step by step.**
+**When the user gives you a specification, follow `skills/pid-pfd-from-spec/SKILL.md` step by step.**
 You do the reading and engineering reasoning (the extraction); the `pid` command does everything else.
 
 Rules that always apply:

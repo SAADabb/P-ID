@@ -165,21 +165,25 @@ class Spec:
         return ids
 
     def bank(self, name: str, units: list[str], *, inlet: str, outlet: str, service: str, src: dict[str, Any], area: str | None = None,
-             unit_in: str = "suction", unit_out: str = "discharge", props: dict[str, Any] | None = None) -> tuple[str, str]:
+             unit_in: str = "suction", unit_out: str = "discharge", props: dict[str, Any] | None = None,
+             inlet_props: dict[str, Any] | None = None, outlet_props: dict[str, Any] | None = None) -> tuple[str, str]:
         """Parallel identical units (e.g. '3 pumps 2+1'): split manifold -> each unit -> merge manifold.
 
-        inlet/outlet are 'object:port' upstream and downstream of the bank. Returns (split id, merge id).
+        inlet/outlet are 'object:port' upstream and downstream of the bank. Returns (split id, merge id); the ids of the
+        two header lines are in ``s.bank_lines`` ({"inlet": …, "outlet": …}). ``props`` go on every line of the bank,
+        ``inlet_props`` / ``outlet_props`` on the header lines only.
         """
         area = area or next(e["area"] for e in self.t["equipment"] if e["id"] == units[0])
         note = "header tees for parallel units (structure needed to draw the parallel arrangement)"
         st = {**src, "basis": "structural", "note": note}
         sp = self.manifold(f"mf.{name}_s", f"{name} suction header", "split", len(units), area, st)
         mg = self.manifold(f"mf.{name}_m", f"{name} discharge header", "merge", len(units), area, st)
-        self.line(inlet, f"{sp}:common", service, src, props=props, header=True)
+        self.bank_lines = {}  # header line ids of the last bank: {"inlet": id, "outlet": id}
+        self.bank_lines["inlet"] = self.line(inlet, f"{sp}:common", service, src, props={**(props or {}), **(inlet_props or {})}, header=True)
         for i, u in enumerate(units, 1):
             self.line(f"{sp}:b{i}", f"{u}:{unit_in}", service, src, props=props)
             self.line(f"{u}:{unit_out}", f"{mg}:b{i}", service, src, props=props)
-        self.line(f"{mg}:common", outlet, service, src, props=props, header=True)
+        self.bank_lines["outlet"] = self.line(f"{mg}:common", outlet, service, src, props={**(props or {}), **(outlet_props or {})}, header=True)
         return sp, mg
 
     def control(self, id_: str, description: str, src: dict[str, Any], *, variable: str | None = None, measured_at_line: str | None = None,

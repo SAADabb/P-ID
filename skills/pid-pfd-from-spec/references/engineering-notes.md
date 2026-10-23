@@ -30,7 +30,9 @@ agents and a process-engineering review. Read them before extracting.
   consumption); consumers inside the scope as equipment. Out-of-scope items that must appear ("à représenter en limite
   de fourniture") get a `scope` open point.
 * **3-way valves** are not modelled as such: draw a control valve on the by-pass/mixing branch with `s.interp` and an
-  open point; the rule pack's control-valve station should then be switched off for it.
+  open point; the rule pack's control-valve station should then be switched off for it. Put the mixing point where it
+  is physically possible: a mixing (return-water) by-pass joins the supply on the suction side of the pumps or at an
+  explicit mixing tee downstream of them - never "into" a pump discharge against its pressure. Say which in the note.
 
 * **Thin specifications** (few or no temperatures, pressures, flows): the stream table will be mostly blank - that is
   correct; say so to the user and list what is needed (heat and mass balance data) instead of filling cells. A stated
