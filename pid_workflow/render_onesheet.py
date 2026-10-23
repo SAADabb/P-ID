@@ -172,8 +172,9 @@ def _zones(rec: Recorder, os_: OneSheet) -> None:
         rec.setDash(10, 4)
         rec.rect(x0, y0, x1 - x0, y1 - y0)
         rec.restoreState()
-        title = wrap(f"AREA {i} – {z.spec.title.upper()}", x1 - x0 - 20, 11, FONT_B, 1)[0]
-        txt(rec, x0 + 10, y0 + 20, title, 11, FONT_B, "l", colors.HexColor("#4a4a4a"))
+        title = wrap(f"AREA {i} – {z.spec.title.upper()}", x1 - x0 - 20, 10, FONT_B, 2)
+        for j, tl in enumerate(title):
+            txt(rec, x0 + 10, y0 + 16 + j * 11.5, tl, 10 if len(title) > 1 else 11, FONT_B, "l", colors.HexColor("#4a4a4a"))
 
 
 def _content(rec: Recorder, painter: SheetPainter, os_: OneSheet, st: Style, content: SheetContent) -> None:
@@ -196,6 +197,26 @@ def _content(rec: Recorder, painter: SheetPainter, os_: OneSheet, st: Style, con
         elif n.kind == "manifold":
             rec.owner = Owner("manifold", n.id, "label")
             painter.draw_manifold(n, sl)
+    # process nozzles the specification leaves unconnected: dashed stub marked TBC
+    used_ports = {(e.src[0], e.src[1]) for e in sl.edges} | {(e.dst[0], e.dst[1]) for e in sl.edges}
+    for n in sl.nodes.values():
+        if n.kind != "equipment":
+            continue
+        for nz in n.obj.nozzles:
+            if nz.role not in ("inlet", "outlet", "suction", "discharge") or (n.id, nz.name) in used_ports or nz.name not in n.ports:
+                continue
+            side, _ = n.ports[nz.name]
+            px, py = n.port_xy(nz.name)
+            dx = {"L": -1, "R": 1}.get(side, 0)
+            dy = {"T": -1, "B": 1}.get(side, 0)
+            rec.owner = Owner("equipment", n.id, "label")
+            rec.saveState()
+            rec.setStrokeColor(GREY)
+            rec.setLineWidth(1.0)
+            rec.setDash(3, 2)
+            rec.line(px, py, px + dx * 26, py + dy * 26)
+            rec.restoreState()
+            txt(rec, px + dx * 30, py + dy * 30 + 2.5, "TBC", 5.8, FONT_B, "l" if dx >= 0 else "r", GREY)
     # valves; tags take the first free spot (above, below, beside) so they never sit on another tag or valve
     from reportlab.pdfbase.pdfmetrics import stringWidth
 
@@ -298,9 +319,9 @@ def _diamond(rec: Recorder, x: float, y: float, lab: str, col: Any) -> None:
 def _stream_table(rec: Recorder, rows: list[list[str]], x0: float, y0: float, x1: float) -> float:
     """Stream table across the bottom of the drawing field (sheet coordinates, y up); returns its top."""
     rec.owner = Owner("sheet", "stream_table", "border")
-    head_w, rh, fs = 64.0, 10.5, 5.6
+    head_w, rh, fs = 64.0, 14.0, 5.4
     n = len(rows[0]) - 1
-    per_band = max(1, int((x1 - x0 - head_w) // 46))
+    per_band = max(1, int((x1 - x0 - head_w) // 58))
     bands = [(i, min(n, i + per_band)) for i in range(0, n, per_band)]
     cw = (x1 - x0 - head_w) / per_band
     y = y0
@@ -321,8 +342,9 @@ def _stream_table(rec: Recorder, rows: list[list[str]], x0: float, y0: float, x1
                     rec.line(cx, y, cx, y + h)
                 val = row[k + 1]
                 rec.setFont(FONT_B if r == 0 else FONT, fs)
-                for ln in wrap(val, cw - 4, fs, FONT, 1):
-                    rec.drawCentredString(cx + cw / 2, yy + 3.2, ln)
+                cell = wrap(val, cw - 4, fs, FONT, 2)
+                for j, ln in enumerate(cell):
+                    rec.drawCentredString(cx + cw / 2, yy + 3.2 + (len(cell) - 1 - j) * (fs + 0.8) - (len(cell) - 1) * 2.6, ln)
         y += h + 6
     rec.setFont(FONT_B, 8)
     rec.drawString(x0, y + 2, "STREAM TABLE – values as stated in the specification (* carried over from equipment data); blank = not given")

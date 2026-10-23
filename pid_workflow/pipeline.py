@@ -52,16 +52,19 @@ def run_pfd(project: str | Path) -> PFDResult:
     content.line_labels = stream_labels(pfd)
     content.tbd = []
     content.equipment_summary = pfd.equipment_summary
+    plan = load_plan(proj.plan_path)
     content.notes = [
         "Process flow diagram derived from the same extraction as the P&ID: major equipment and process streams only; "
         "isolation, check, drain and vent valves, strainers and local instruments are on the P&ID.",
         "Identical parallel units are drawn once; their tags and number are given on the symbol.",
-        "Stream data are those stated in the specification; '*' = carried over from equipment data (e.g. pump design flow). "
-        "Blank = not given, not assumed.",
-    ] + [n for n in content.notes if "Orange" not in n and "Line numbers" not in n]
+        "Stream data are those stated in the specification; '*' = stated for the connected equipment; 'see n' = the same stated "
+        "value as stream n; '≤ / ≥' = stated limit. Blank = not given, not assumed. No mass or heat balance is made.",
+        "Dashed stubs marked TBC are connections the specification does not define (see holds).",
+    ] + list(plan.get("pfd_notes") or []) + [f"Control: {n}" for n in pfd.control_notes]
     rows = [["Stream"] + [str(s_.no) for s_ in pfd.streams]]
     for r in STREAM_ROWS:
         rows.append([r] + [s_.values.get(r, "") + ("*" if r in s_.derived else "") for s_ in pfd.streams])
+    wide_rows = [list(r) for r in rows]  # full text for the workbook
     content.stream_table = rows
     hints = _hints(proj)
     os_ = build_onesheet(t, hints)
@@ -77,7 +80,7 @@ def run_pfd(project: str | Path) -> PFDResult:
     wb = Workbook()
     ws = wb.active
     ws.title = "Stream table"
-    for r in rows:
+    for r in wide_rows:
         ws.append(r)
     for c in ws[1]:
         c.font = Font(bold=True, color="FFFFFF")
