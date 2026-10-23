@@ -93,6 +93,7 @@ def _field_box() -> tuple[float, float, float, float]:
 
 def draw_onesheet(topo: Topology, os_: OneSheet, st: Style, content: SheetContent) -> OneSheetDrawing:
     _fonts()
+    st.prime([e.service for e in os_.layout.edges if e.service])
     rec = Recorder()
     W, H = A0
     _border(rec, topo)
@@ -385,6 +386,20 @@ def _edge(rec: Recorder, painter: SheetPainter, e: MEdge, st: Style, content: Sh
         f = 0.72 if e.chain else 0.5
         arrow(rec, xa + (xb - xa) * f, ya + (yb - ya) * f, xb - xa, yb - ya, 4.4)
     rec.restoreState()
+    if content.kind == "pfd" and len(e.line_ids or []) > 1:  # one stream per line piece between control valves
+        from .proteus_graphics import _split
+
+        pieces = _split(list(e.path), [(x, y) for _, x, y, _ in e.symbols])
+        for lid, piece in zip(e.line_ids, pieces):
+            lab_ = content.line_labels.get(lid, "")
+            if lab_ and lab_ not in content._labelled and len(piece) >= 2:
+                segs = sorted(((abs(b[0] - a[0]) + abs(b[1] - a[1]), a, b) for a, b in zip(piece, piece[1:])), key=lambda z: -z[0])
+                _, a, b = segs[0]
+                content._labelled.add(lab_)
+                rec.owner = Owner("line", e.id, "label")
+                _diamond(rec, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, lab_, col)
+        rec.owner = owner
+        return
     # line number on the longest horizontal run that is free of valves
     lab = ""
     ids = e.line_ids or []
@@ -396,12 +411,23 @@ def _edge(rec: Recorder, painter: SheetPainter, e: MEdge, st: Style, content: Sh
         lab = content.line_labels.get(ln, "") if ln else ""
     if lab and not e.stub:
         runs = []
+        min_run = 90 if content.kind != "pfd" else 28   # every PFD stream gets its number, even on short runs
         for i in range(len(e.path) - 1):
             (xa, ya), (xb, yb) = e.path[i], e.path[i + 1]
-            if abs(ya - yb) < 0.01 and abs(xb - xa) > 90:
+            if abs(ya - yb) < 0.01 and abs(xb - xa) > min_run:
                 lo, hi = sorted((xa, xb))
                 if not any(lo - 12 < sx < hi + 12 and abs(sy - ya) < 1 for _, sx, sy, _ in e.symbols):
                     runs.append((hi - lo, (lo + hi) / 2, ya))
+        if not runs and content.kind == "pfd":  # vertical run, then any segment, as fallbacks
+            for i in range(len(e.path) - 1):
+                (xa, ya), (xb, yb) = e.path[i], e.path[i + 1]
+                if abs(xa - xb) < 0.01 and abs(yb - ya) > min_run:
+                    lo, hi = sorted((ya, yb))
+                    if not any(lo - 12 < sy < hi + 12 and abs(sx - xa) < 1 for _, sx, sy, _ in e.symbols):
+                        runs.append((hi - lo, xa, (lo + hi) / 2))
+            if not runs:
+                seg = max(zip(e.path, e.path[1:]), key=lambda ab: abs(ab[1][0] - ab[0][0]) + abs(ab[1][1] - ab[0][1]))
+                runs.append((0.0, (seg[0][0] + seg[1][0]) / 2, (seg[0][1] + seg[1][1]) / 2))
         if runs and content.kind == "pfd":
             if lab not in content._labelled:  # one diamond per stream
                 content._labelled.add(lab)

@@ -70,6 +70,9 @@ def run_pfd(project: str | Path) -> PFDResult:
     os_ = build_onesheet(t, hints)
     qa = onesheet_qa(os_)
     drawing = draw_onesheet(t, os_, Style(proj.p("rendering")), content)
+    unnumbered = [s_.no for s_ in pfd.streams if str(s_.no) not in content._labelled]
+    if unnumbered:
+        qa.append(f"stream numbers not placed on the drawing: {unnumbered[:20]}{' …' if len(unnumbered) > 20 else ''}")
     pdf_path = proj.out / "pfd_one_sheet_A0.pdf"
     save_onesheet_pdf(drawing, t, pdf_path)
     xml_path = proj.out / "pfd.proteus.xml"

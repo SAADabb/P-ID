@@ -61,6 +61,7 @@ class Style:
         self.proposed = colors.HexColor(d["proposed_color"])
         self.future_dash = d.get("future_dash", [4, 3])
         self._auto: dict[str, Any] = {}
+        self._variant: dict[str, int] = {}
 
     def _match(self, service: str) -> tuple[Any, str] | None:
         for r in self.rules:
@@ -69,8 +70,27 @@ class Style:
         low = service.lower()
         for r in self.keywords:
             if any(k in low for k in r["any"]):
-                return colors.HexColor(r["color"]), service
+                base = colors.HexColor(r["color"])
+                k = self._variant.get(service, 0)
+                if k:  # several services share a keyword (steam 8/4/1 bar): lighter shades, deterministic
+                    f = min(0.22 * k, 0.6)
+                    base = colors.Color(base.red + (1 - base.red) * f, base.green + (1 - base.green) * f, base.blue + (1 - base.blue) * f)
+                return base, service
         return None
+
+    def prime(self, services: list[str]) -> None:
+        """Give services that share a keyword colour distinct shades, in sorted order (same result on every drawing)."""
+        groups: dict[int, list[str]] = {}
+        for sv in sorted(set(services)):
+            if any(sv.startswith(r["prefix"]) for r in self.rules):
+                continue
+            low = sv.lower()
+            for i, r in enumerate(self.keywords):
+                if any(k in low for k in r["any"]):
+                    if i > 0:  # the first keyword group is drains/vents: one grey
+                        groups.setdefault(i, []).append(sv)
+                    break
+        self._variant = {sv: k for g in groups.values() for k, sv in enumerate(g)}
 
     def color(self, service: str) -> Any:
         m = self._match(service)

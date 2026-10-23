@@ -53,7 +53,7 @@ class PFD:
     control_notes: list[str] = field(default_factory=list)
 
 
-STREAM_ROWS = ["Service", "From", "To", "Temperature", "Pressure", "Flow"]
+STREAM_ROWS = ["Service", "From", "To", "Temperature", "Pressure", "Flow", "Size (stated)"]
 _CTRL_CODE = {"pressure": "PIC", "temperature": "TIC", "level": "LIC", "flow": "FIC", "differential pressure": "PDIC"}
 
 
@@ -173,7 +173,7 @@ def _collapse_banks(t: Topology) -> list[Bank]:
             t.equipment = [e for e in t.equipment if e.id not in others_ids]
             tags = [u.tag for u in units if u.tag]
             rep.tag = _join_tags(tags) if tags else None
-            rep.name = f"{_common_name([u.name or '' for u in units])} ({len(units)} units)"
+            rep.name = f"{_common_name([u.name or '' for u in units], tags)} ({len(units)} units)"
             cfg = next((a.value for u in units for k, a in u.attributes.items() if k in ("configuration", "arrangement")), None)
             if cfg and str(cfg) not in rep.name:
                 rep.name += f" – {cfg}"
@@ -215,9 +215,26 @@ def _join_tags(tags: list[str]) -> str:
     return "/".join(tags)
 
 
-def _common_name(names: list[str]) -> str:
-    base = [re.sub(r"\s*[\(\[]?\d+/\d+[\)\]]?|\s*\((stand-by|standby|secours)\)|\s+\d+$", "", n).strip() for n in names]
-    return base[0] if len(set(base)) == 1 else names[0]
+def _common_name(names: list[str], tags: list[str] | None = None) -> str:
+    """Shared part of the unit names: tags, '1/3', '(stand-by)' and trailing numbers/letters removed."""
+    base = []
+    for n in names:
+        for tg in tags or []:
+            n = n.replace(tg, "")
+        n = re.sub(r"\s*[\(\[]?\d+/\d+[\)\]]?|\s*\((stand-by|standby|secours|spare)\)|\s+[A-Z0-9]{1,3}$", "", n)
+        base.append(re.sub(r"\s{2,}", " ", n).strip(" -–,"))
+    if len(set(base)) == 1 and base[0]:
+        return base[0]
+    words = [b.split() for b in base]
+    if len({len(w) for w in words}) == 1:  # same shape: keep the words all names share (PAC 1A/1B – heat pump -> PAC – heat pump)
+        common = [col[0] for col in zip(*words) if len(set(col)) == 1]
+    else:
+        common = []
+        for col in zip(*words):
+            if len(set(col)) != 1:
+                break
+            common.append(col[0])
+    return " ".join(common).strip(" -–,") or base[0]
 
 
 # ------------------------------------------------------------------------------------- control
@@ -278,29 +295,31 @@ def _number_streams(t: Topology) -> list[Stream]:
     for ln in t.process_lines:
         by_from[ln.from_.ref].append(ln)
     incoming = {ln.to.ref for ln in t.process_lines}
-    starts = sorted({b.id for b in t.boundaries if b.direction == "in"}) + sorted(
-        {ln.from_.ref for ln in t.process_lines if ln.from_.ref not in incoming})
+    # follow the process from each inlet to its end before starting the next (depth first, extraction order)
+    starts = [b.id for b in t.boundaries if b.direction == "in"]
+    starts += [ln.from_.ref for ln in t.process_lines if ln.from_.ref not in incoming and ln.from_.ref not in starts]
     order: list[ProcessLine] = []
-    seen_nodes: set[str] = set()
-    q: deque[str] = deque(starts)
-    pending = sorted({ln.from_.ref for ln in t.process_lines})
-    while True:
-        if not q:
-            nxt = next((n for n in pending if n not in seen_nodes), None)
-            if nxt is None:
-                break
-            q.append(nxt)
-        n = q.popleft()
-        if n in seen_nodes:
-            continue
-        seen_nodes.add(n)
-        for ln in sorted(by_from.get(n, []), key=lambda x: (x.from_.port, x.id)):
+    taken: set[str] = set()
+
+    def walk(n: str) -> None:
+        for ln in by_from.get(n, []):
+            if ln.id in taken:
+                continue
+            taken.add(ln.id)
             order.append(ln)
-            q.append(ln.to.ref)
+            walk(ln.to.ref)
+
+    for n in starts:
+        walk(n)
+    for ln in t.process_lines:  # closed loops without an inlet
+        if ln.id not in taken:
+            walk(ln.from_.ref)
     streams = []
     for ln in order:
         s = Stream(len(streams) + 1, [ln.id], ln.service, _node_name(t, ln.from_.ref, "up"), _node_name(t, ln.to.ref, "down"))
         s.values = {"Service": ln.service, "From": s.frm, "To": s.to, **_stream_values(ln.properties)}
+        if _size(ln.properties):
+            s.values["Size (stated)"] = _size(ln.properties)
         s.flow_src = _flow_key(ln.properties)
         streams.append(s)
     return streams
@@ -331,6 +350,19 @@ def _stream_values(props: dict[str, Attr]) -> dict[str, str]:
         if keys:
             out[row] = " / ".join(_qualified(k, props[k]) if stem != "flow" else _fmt(props[k]) for k in keys)
     return out
+
+
+def _size(props: dict[str, Attr]) -> str:
+    a = props.get("nominal_diameter")
+    if a is not None and a.value:
+        return f"DN{a.value}"
+    a = props.get("nominal_diameter_range")
+    if a is not None and isinstance(a.value, dict):
+        return f"DN{a.value.get('min')}–{a.value.get('max')}"
+    a = props.get("nominal_diameter_min")
+    if a is not None and a.value:
+        return f"≥ DN{a.value}"
+    return ""
 
 
 def _flow_key(props: dict[str, Attr]) -> tuple | None:
