@@ -10,19 +10,10 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
+from .catalog import SYMBOL_DIMS, component_class_ok, equipment_classes
 from .schema import Boundary, Component, Equipment, Topology, logical, ports_of
 
-# Classes the exporter knows how to build (see export_dexpi.py).
-SUPPORTED_CLASSES: dict[str, set[str]] = {
-    "equipment": {
-        "Tank", "Vessel", "CentrifugalPump", "PlateHeatExchanger", "CustomHeatExchanger",
-        "CustomEquipment", "CustomCompressor", "Boiler",
-    },
-    "valve": {"CustomOperatedValve", "GateValve", "BallValve", "GlobeValve", "ButterflyValve", "PlugValve", "NeedleValve", "CheckValve", "SwingCheckValve"},
-    "check_valve": {"CheckValve", "SwingCheckValve"},
-    "manifold": {"PipeTee"},
-    "strainer": {"Strainer", "ConicalStrainer"},
-}
+# Accepted classes: every pyDEXPI equipment / piping-component class (see catalog.py).
 
 IN_ROLES = {"inlet", "suction"}
 OUT_ROLES = {"outlet", "discharge"}
@@ -102,16 +93,19 @@ def validate(topo: Topology) -> ValidationReport:
 
     # ---------------------------------------------------------------- model classes
     for e in topo.equipment:
-        if e.model_class not in SUPPORTED_CLASSES["equipment"]:
-            rep.add("error", "CLASS_UNSUPPORTED", f"equipment {e.id}: model class '{e.model_class}' not supported", e.id)
+        if e.model_class not in equipment_classes():
+            rep.add("error", "CLASS_UNSUPPORTED", f"equipment {e.id}: '{e.model_class}' is not a pyDEXPI equipment class "
+                    "(see catalog.equipment_classes(); use CustomEquipment + symbol for anything else)", e.id)
+        if e.symbol and e.symbol not in SYMBOL_DIMS:
+            rep.add("error", "SYMBOL_UNKNOWN", f"equipment {e.id}: symbol '{e.symbol}' unknown (choose from {sorted(SYMBOL_DIMS)})", e.id)
         if e.area not in area_ids:
             rep.add("error", "AREA_UNKNOWN", f"equipment {e.id}: unknown area '{e.area}'", e.id)
         names = [n.name for n in e.nozzles]
         if len(names) != len(set(names)):
             rep.add("error", "NOZZLE_DUPLICATE", f"equipment {e.id} has duplicate nozzle names", e.id)
     for c in topo.components:
-        if c.model_class not in SUPPORTED_CLASSES[c.kind]:
-            rep.add("error", "CLASS_UNSUPPORTED", f"component {c.id}: model class '{c.model_class}' not supported for kind '{c.kind}'", c.id)
+        if not component_class_ok(c.kind, c.model_class):
+            rep.add("error", "CLASS_UNSUPPORTED", f"component {c.id}: '{c.model_class}' is not a pyDEXPI class for kind '{c.kind}'", c.id)
         if c.kind == "manifold" and (not c.branches or c.branches < 2 or c.role is None):
             rep.add("error", "MANIFOLD_DEF", f"manifold {c.id} needs role and >= 2 branches", c.id)
         if c.technology_status == "unspecified_generic" and c.technology:

@@ -50,10 +50,32 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 
 
 def load_policy(generic_path: str | Path, project_rules_path: str | Path) -> Policy:
-    generic = yaml.safe_load(Path(generic_path).read_text(encoding="utf-8"))
+    """Generic policy + project rules.
+
+    ``include: [pack, ...]`` in the project rule file pulls in ``policies/rule_packs/<pack>.yaml`` (rules of generic good
+    practice).  A project rule with the same id replaces the pack rule; ``{id: x, enabled: false}`` switches it off.
+    """
+    generic_path = Path(generic_path)
+    generic = yaml.safe_load(generic_path.read_text(encoding="utf-8"))
     proj = yaml.safe_load(Path(project_rules_path).read_text(encoding="utf-8"))
     # project-level overrides of generic defaults (if present) take precedence
     generic = _deep_merge(generic, proj.get("overrides", {}))
+    raw: list[dict[str, Any]] = []
+    for pack in proj.get("include", []) or []:
+        pack_file = generic_path.parent / "rule_packs" / f"{pack}.yaml"
+        data = yaml.safe_load(pack_file.read_text(encoding="utf-8"))
+        for r in data.get("rules", []):
+            r = copy.deepcopy(r)
+            r.setdefault("source", {}).setdefault("pack", pack)
+            raw.append(r)
+    for r in proj.get("rules", []) or []:
+        idx = next((i for i, x in enumerate(raw) if x["id"] == r["id"]), None)
+        if idx is None:
+            raw.append(r)
+        elif set(r) <= {"id", "enabled"}:
+            raw[idx] = {**raw[idx], **r}
+        else:
+            raw[idx] = r
     rules = [
         Rule(
             id=r["id"],
@@ -62,7 +84,7 @@ def load_policy(generic_path: str | Path, project_rules_path: str | Path) -> Pol
             source=r.get("source", {}),
             params=r.get("params", {}),
         )
-        for r in proj.get("rules", [])
+        for r in raw
     ]
     return Policy(
         generic=generic,

@@ -97,13 +97,14 @@ class Equipment(_Obj):
     model_class: str  # pyDEXPI class name
     area: str
     lifecycle: Lifecycle = "unspecified"
+    symbol: str | None = None  # drawing symbol when the DEXPI class is generic (e.g. 'heat_pump'); see catalog.py
     nozzles: list[Nozzle] = Field(default_factory=list)
 
 
 class Component(_Obj):
     """Inline piping component: valve, check valve, manifold (tee/header), ..."""
 
-    kind: Literal["valve", "check_valve", "manifold", "strainer"]
+    kind: Literal["valve", "check_valve", "manifold", "strainer", "relief"]
     model_class: str
     function: str | None = None  # isolation, check, bypass, drain, vent, control, purge
     technology: str | None = None  # specific valve technology, None when unknown
@@ -113,7 +114,7 @@ class Component(_Obj):
     tag_status: TagStatus = "none"
     area: str | None = None
     lifecycle: Lifecycle = "unspecified"
-    open_end: Literal["drain", "vent"] | None = None  # valve discharging to atmosphere/drain
+    open_end: Literal["drain", "vent", "relief"] | None = None  # valve discharging to atmosphere/drain
     # manifold only
     role: Literal["split", "merge"] | None = None
     branches: int | None = None

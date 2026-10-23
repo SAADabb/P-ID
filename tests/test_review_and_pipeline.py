@@ -108,6 +108,25 @@ def _mini_source() -> dict:
     }
 
 
+MINI_RULES = [
+    {"id": "pump.auxiliaries", "type": "pump_auxiliaries", "source": {"page": 1, "section": "1"},
+     "params": {"applies_to_classes": ["CentrifugalPump"], "suction_nozzle_role": "suction", "discharge_nozzle_role": "discharge",
+                "suction": [{"function": "isolation", "operation": "manual"}],
+                "discharge": [{"function": "check", "operation": "unknown"}, {"function": "isolation", "operation": "manual"}]}},
+    {"id": "control_valve.manifold", "type": "control_valve_manifold", "source": {"page": 1, "section": "1"},
+     "params": {"applies_to_function": "control", "upstream_isolation": {"function": "isolation", "operation": "unknown"},
+                "downstream_isolation": {"function": "isolation", "operation": "unknown"}, "purge": {"function": "purge", "operation": "unknown"},
+                "bypass_valve": {"function": "bypass", "model_class": "GlobeValve", "operation": "unknown"}}},
+    {"id": "vessel.auxiliaries", "type": "vessel_auxiliaries", "source": {"page": 1, "section": "1"},
+     "params": {"applies_to_classes": ["Tank", "Vessel"], "include_existing": True, "drain": {"function": "drain", "operation": "unknown"},
+                "vent": {"function": "vent", "operation": "unknown"}, "level": {"isa_code": "LT", "measured_variable": "level"}}},
+    {"id": "control_loop.from_requirement", "type": "control_loop", "source": {"page": 1, "section": "1"},
+     "params": {"controller_code": {"pressure": "PIC", "temperature": "TIC", "level": "LIC"}}},
+    {"id": "tagging.isa", "type": "tagging", "source": {"page": 1, "section": "1"}, "params": {"tag_untagged_source_control_valves": True}},
+    {"id": "unresolved.generated", "type": "unresolved_summary", "source": {}, "params": {}},
+]
+
+
 def _mini_project(tmp: Path) -> Path:
     shutil_policies = tmp / "policies"
     shutil_policies.mkdir()
@@ -121,8 +140,7 @@ def _mini_project(tmp: Path) -> Path:
         "name": "mini", "source_document": "mini.pdf", "source_topology": "source_topology.json", "working_topology": "working_topology.json",
         "rules": "project_rules.yaml", "layout_hints": "layout_hints.yaml", "generic_policy": "../../policies/generic.yaml",
         "rendering": "../../policies/rendering.yaml", "output_dir": "output", "reports_dir": "reports"}), encoding="utf-8")
-    rules = yaml.safe_load((ROOT / "projects" / "lpf_bsst" / "project_rules.yaml").read_text(encoding="utf-8"))
-    rules["project"] = "mini"
+    rules = {"project": "mini", "document": "mini.pdf", "rules": MINI_RULES}
     (proj / "project_rules.yaml").write_text(yaml.safe_dump(rules), encoding="utf-8")
     return proj
 

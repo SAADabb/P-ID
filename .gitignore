@@ -6,3 +6,7 @@ build/
 dist/
 *.main.pdf
 *.tables.pdf
+
+# Projects (one per specification) are local work: the repository holds only the generic tool.
+projects/*
+!projects/README.md

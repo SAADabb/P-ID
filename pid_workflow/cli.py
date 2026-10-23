@@ -13,6 +13,9 @@ from .topology_io import save_topology
 def _print_run(res) -> None:  # noqa: ANN001
     t = res.topology
     pending = sum(1 for o in t.objects().values() if o.provenance.origin == "generated" and o.provenance.status == "pending_review")
+    if res.extraction_check is not None:
+        ne = sum(1 for x in res.extraction_check if x[0] == "error")
+        print(f"extraction check: {ne} errors, {len(res.extraction_check) - ne} warnings (reports/extraction_check.md)")
     print(f"validation      : {'PASS' if res.validation.ok else 'FAIL'} ({len(res.validation.errors)} errors, {len(res.validation.warnings)} warnings)")
     print(f"enrichment      : idempotent={res.idempotent}, {pending} proposals pending review")
     print(f"proteus xml     : round trip {'PASS' if res.roundtrip.ok else 'FAIL'} ({len(res.roundtrip.checks)} checks)")
@@ -43,9 +46,34 @@ def main(argv: list[str] | None = None) -> int:
     v.add_argument("--reject", nargs="*", metavar="ID")
     s = sub.add_parser("status", help="counts of proposals and open points")
     s.add_argument("project")
+    n = sub.add_parser("new", help="set up projects/<name> for a new specification (copies it, splits it into page texts, writes templates)")
+    n.add_argument("name")
+    n.add_argument("spec", help="the specification (PDF with a text layer, .txt or .md)")
+    n.add_argument("--language", default="fr")
+    n.add_argument("--force", action="store_true")
+    c = sub.add_parser("check", help="check an extraction: validation, verbatim quotes, open-point triage - with the fix for each problem")
+    c.add_argument("project")
     args = ap.parse_args(argv)
 
     try:
+        if args.cmd == "new":
+            from .scaffold import new_project
+
+            root = new_project(args.name, args.spec, language=args.language, force=args.force)
+            pages = sorted((root / "source" / "pages").glob("page_*.txt"))
+            print(f"created {root}\n  {len(pages)} page texts in source/pages/ - read them all")
+            print(f"next: write extraction/extract_{args.name}.py, run it, then: pid check {root} ; pid run {root}")
+            return 0
+        if args.cmd == "check":
+            from .scaffold import check_project
+
+            proj = load_project(args.project)
+            probs = check_project(proj.root)
+            for lvl, what, fix in probs:
+                print(f"{lvl.upper():7} {what}\n        fix: {fix}")
+            n_err = sum(1 for p in probs if p[0] == "error")
+            print(f"{n_err} error(s), {len(probs) - n_err} warning(s)")
+            return 1 if n_err else 0
         if args.cmd == "run":
             res = run_all(args.project, rebuild=args.rebuild, render=not args.no_pdf)
             _print_run(res)

@@ -23,6 +23,7 @@ from reportlab.pdfgen import canvas
 from reportlab.platypus import LongTable, Paragraph, SimpleDocTemplate, Spacer, TableStyle
 
 from .layout import DrawingLayout, MEdge, MNode, SheetLayout
+from .catalog import valve_symbol
 from .schema import Component, Topology, is_pending
 
 FONT = "FreeSans"
@@ -49,24 +50,45 @@ def _fonts() -> None:
 
 
 class Style:
+    """Line colours: project service prefixes first, then multilingual keywords, then a fixed palette (deterministic)."""
+
     def __init__(self, path: str | Path):
         d = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
         self.rules = d["service_colors"]
+        self.keywords = d.get("keyword_colors", [])
+        self.palette = [colors.HexColor(c) for c in d.get("palette", ["#1f5fbf", "#0a8f8f", "#c0262d", "#7d3c98", "#2e8b57", "#d4561a"])]
         self.default = colors.HexColor(d["default_color"])
         self.proposed = colors.HexColor(d["proposed_color"])
         self.future_dash = d.get("future_dash", [4, 3])
+        self._auto: dict[str, Any] = {}
+
+    def _match(self, service: str) -> tuple[Any, str] | None:
+        for r in self.rules:
+            if service.startswith(r["prefix"]):
+                return colors.HexColor(r["color"]), r["label"]
+        low = service.lower()
+        for r in self.keywords:
+            if any(k in low for k in r["any"]):
+                return colors.HexColor(r["color"]), service
+        return None
 
     def color(self, service: str) -> Any:
-        for r in self.rules:
-            if service.startswith(r["prefix"]):
-                return colors.HexColor(r["color"])
-        return self.default
+        m = self._match(service)
+        if m is not None:
+            return m[0]
+        if not service:
+            return self.default
+        if service not in self._auto:
+            used = {c.hexval() for c in self._auto.values()}
+            free = [c for c in self.palette if c.hexval() not in used] or self.palette
+            import zlib
+
+            self._auto[service] = free[zlib.crc32(service.encode()) % len(free)]
+        return self._auto[service]
 
     def label(self, service: str) -> str:
-        for r in self.rules:
-            if service.startswith(r["prefix"]):
-                return r["label"]
-        return service
+        m = self._match(service)
+        return m[1] if m is not None else service
 
 
 INK = colors.HexColor("#1c1c1c")
@@ -190,6 +212,58 @@ def draw_equipment(c: canvas.Canvas, n: MNode, st: Style) -> None:
         c.setLineWidth(1.1)
         c.circle(x, y, 13, stroke=1, fill=1)
         poly(c, [(x - 6, y - 7), (x + 8, y), (x - 6, y + 7)], close=True)
+    elif sym == "fan":
+        r = min(w, h) / 2
+        c.circle(x, y, r, stroke=1, fill=1)
+        c.setLineWidth(0.9)
+        for a in (0, 120, 240):  # three blades
+            ra = math.radians(a)
+            poly(c, [(x, y), (x + r * 0.85 * math.cos(ra), y + r * 0.85 * math.sin(ra)), (x + r * 0.5 * math.cos(ra + 0.6), y + r * 0.5 * math.sin(ra + 0.6))], close=True)
+    elif sym == "turbine":
+        poly(c, [(x - w / 2, y - h * 0.2), (x + w / 2, y - h / 2), (x + w / 2, y + h / 2), (x - w / 2, y + h * 0.2)], close=True, fill=True)
+    elif sym == "motor":
+        c.circle(x, y, min(w, h) / 2, stroke=1, fill=1)
+        txt(c, x, y + 3.5, "M", 10, FONT_B)
+    elif sym == "air_cooler":
+        c.rect(x - w / 2, y - h / 2 + 12, w, h - 12, stroke=1, fill=1)
+        c.setLineWidth(0.8)
+        for k in range(6):
+            xx = x - w / 2 + 6 + (w - 12) * k / 5
+            c.line(xx, y - h / 2 + 14, xx, y + h / 2 - 2)
+        for fx in (x - w / 4, x + w / 4):
+            c.circle(fx, y - h / 2 + 6, 6, stroke=1, fill=1)
+    elif sym == "cooling_tower":
+        poly(c, [(x - w / 2, y + h / 2), (x - w * 0.32, y - h / 2 + 14), (x + w * 0.32, y - h / 2 + 14), (x + w / 2, y + h / 2)], close=True, fill=True)
+        c.setLineWidth(0.8)
+        c.circle(x, y - h / 2 + 7, 7, stroke=1, fill=1)
+        c.setDash(2, 2)
+        for k in range(3):
+            yy = y + h * 0.05 + k * 9
+            c.line(x - w * 0.32, yy, x + w * 0.32, yy)
+        c.setDash()
+    elif sym == "column":
+        c.roundRect(x - w / 2, y - h / 2, w, h, w / 2, stroke=1, fill=1)
+        c.setLineWidth(0.7)
+        for k in range(1, 7):
+            yy = y - h / 2 + h * k / 7
+            c.line(x - w / 2 + 3, yy, x + w / 2 - 3, yy)
+    elif sym == "filter":
+        c.rect(x - w / 2, y - h / 2, w, h, stroke=1, fill=1)
+        c.setLineWidth(0.8)
+        c.setDash(3, 2)
+        c.line(x - w / 2, y + h / 2, x + w / 2, y - h / 2)
+        c.setDash()
+    elif sym == "heater":
+        c.rect(x - w / 2, y - h / 2, w, h, stroke=1, fill=1)
+        c.setLineWidth(0.9)
+        poly(c, [(x - w / 2 + 8, y + h * 0.3), (x - w / 4, y + h * 0.1), (x, y + h * 0.3), (x + w / 4, y + h * 0.1), (x + w / 2 - 8, y + h * 0.3)])
+        poly(c, [(x - 8, y + h / 2 - 4), (x, y + h / 2 - 16), (x + 8, y + h / 2 - 4)])
+    elif sym == "mixer":
+        c.roundRect(x - w / 2, y - h / 2, w, h, 12, stroke=1, fill=1)
+        c.setLineWidth(0.9)
+        c.line(x, y - h / 2 - 10, x, y + h * 0.25)
+        poly(c, [(x - 12, y + h * 0.25 - 5), (x + 12, y + h * 0.25 + 5)])
+        poly(c, [(x - 12, y + h * 0.25 + 5), (x + 12, y + h * 0.25 - 5)])
     elif sym == "box":
         c.roundRect(x - w / 2, y - h / 2, w, h, 3, stroke=1, fill=1)
     else:
@@ -262,6 +336,8 @@ def draw_valve(c: canvas.Canvas, comp: Component, x: float, y: float, ori: str, 
     col = st.proposed if proposed else INK
     c.saveState()
     c.translate(x, y)
+    if comp.kind == "relief":
+        ori, flow_dx = "H", 1.0  # safety valves are always drawn upright: inlet from below, spring on top
     if ori == "V":
         c.rotate(90)
     if flow_dx < 0:
@@ -272,28 +348,46 @@ def draw_valve(c: canvas.Canvas, comp: Component, x: float, y: float, ori: str, 
     c.setFillColor(fill)
     wv, hv = 9.0, 6.2
     fn = comp.function
-    if comp.kind == "check_valve":
+    sym = valve_symbol(comp.model_class, fn) if comp.kind != "strainer" else "strainer"
+    if comp.kind == "check_valve" or sym == "check":
         # triangle + bar, flow to the right
-        c.setFillColor(fill)
         poly(c, [(-wv * 0.7, -hv), (wv * 0.7, 0), (-wv * 0.7, hv)], close=True, fill=True)
         c.line(wv * 0.7, -hv, wv * 0.7, hv)
+    elif sym == "strainer":
+        c.line(-wv, 0, wv, 0)
+        poly(c, [(-wv * 0.5, 0), (wv * 0.3, hv * 1.4), (wv * 0.9, hv * 0.6), (0, 0)], close=True, fill=True)
+        c.setDash(1.5, 1.2)
+        c.line(-wv * 0.1, hv * 0.5, wv * 0.55, hv * 1.0)
+        c.setDash()
+    elif sym == "relief" or comp.kind == "relief":
+        # angle safety valve: inlet from below, outlet to the side, spring on top
+        poly(c, [(-hv, wv), (0, 0), (hv, wv)], close=True, fill=True)       # inlet from below
+        poly(c, [(0, 0), (wv, -hv), (wv, hv)], close=True, fill=True)       # outlet to the side
+        poly(c, [(0, 0), (0, -5), (-3, -7), (3, -9.5), (-3, -12), (3, -14.5), (0, -16)])  # spring
     else:
         poly(c, [(-wv, -hv), (0, 0), (-wv, hv)], close=True, fill=True)
         poly(c, [(wv, -hv), (0, 0), (wv, hv)], close=True, fill=True)
-        if comp.model_class == "GlobeValve":
+        if sym == "globe":
             c.setFillColor(col)
             c.circle(0, 0, 2.3, stroke=0, fill=1)
+        elif sym == "ball":
+            c.setFillColor(fill)
+            c.circle(0, 0, 3.2, stroke=1, fill=1)
+        elif sym == "butterfly":
+            c.line(0, -hv, 0, hv)
+            c.setFillColor(col)
+            c.circle(0, 0, 1.6, stroke=0, fill=1)
+        elif sym == "plug":
+            c.setFillColor(col)
+            c.rect(-1.8, -1.8, 3.6, 3.6, stroke=0, fill=1)
         if fn == "control":
             c.line(0, 0, 0, -hv - 6)
             c.setFillColor(fill)
-            c.arc(-6, -hv - 12, 6, -hv + 0, 0, 180) if False else None
             p = c.beginPath()
             p.moveTo(-6, -hv - 6)
             p.curveTo(-6, -hv - 14, 6, -hv - 14, 6, -hv - 6)
             p.close()
             c.drawPath(p, fill=1, stroke=1)
-        if fn == "isolation" and comp.operation == "automated":
-            pass
     c.restoreState()
 
 

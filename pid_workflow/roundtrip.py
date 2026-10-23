@@ -206,7 +206,7 @@ def _verify(topo: Topology, xml_path: str | Path, rep: RoundTripReport) -> Round
         el = xml_topo_els.get(c.id)
         if el is None or el.get("ComponentClass") != c.model_class:
             bad.append(f"{c.id} missing/class")
-        elif (_dexpi(el, "PipingComponentNameAssignmentClass") or None) != c.tag:
+        elif (_dexpi(el, "PipingComponentNameAssignmentClass") or _custom(el).get("Tag") or None) != c.tag:
             bad.append(f"{c.id} tag")
     for b in topo.boundaries:
         el = xml_topo_els.get(b.id)

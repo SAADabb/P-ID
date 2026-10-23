@@ -1,112 +1,102 @@
 ---
 name: pid-from-spec
-description: Turn an engineering specification (PDF/text) into a draft P&ID with this repo's pipeline. Use when asked to process a new specification, extract a source topology, write project rules, or regenerate the P&ID/DEXPI outputs for a project under projects/.
+description: Turn an engineering specification / cahier des charges (PDF or text) into a draft P&ID - one A0 sheet, DEXPI Proteus XML with graphics, engineering lists and a decision register. Use whenever the user gives a specification and asks for a P&ID, or asks to process, extract, re-run or review a project under projects/.
 ---
 
 # Draft P&ID from a specification
 
-You (the AI) do **extraction and engineering reasoning**. Python does everything structural.
-Never skip the checks at the end. Never invent values the document does not give.
+**You** read the document and do the engineering reasoning. **`pid` (Python)** does everything structural: rules,
+validation, layout, drawing, DEXPI export, lists. Never invent a value the document does not give; record the gap instead.
+Work through the steps in order and do not stop before step 6 is clean.
 
-## 0. Set up the project
-
-```bash
-cp -r projects/lpf_bsst projects/<name>          # then clean it:
-rm -rf projects/<name>/{output,reports,working_topology.json,docs,source/*}
-cp <spec.pdf> projects/<name>/source/
-```
-Edit `project.yaml` (name, source_document). Keep `generic_policy` / `rendering` paths.
-
-## 1. Read the document completely, then extract
-
-Read every page (`pdftotext -layout`, or the Read tool for PDFs; look at figures/tables too).
-Write `projects/<name>/extraction/extract_<name>.py` starting from
-`.claude/skills/pid-from-spec/templates/extract_template.py`. It emits `source_topology.json`.
-
-Capture, each with page + section + a **verbatim quote**:
-
-| Thing | Where it goes | Notes |
-|---|---|---|
-| Equipment | `equipment` | `model_class` must be in `validate.SUPPORTED_CLASSES`; real tag in `tag` (else `null`); nozzles with schematic `name` + `role`; `number`/`size` stay `null` unless stated |
-| Valves/known inline parts | `components` (`kind: valve|check_valve|strainer`) | unknown technology → `technology: null`, `technology_status: unspecified_generic`, class `CustomOperatedValve` |
-| Parallel banks / branches | `components` `kind: manifold` (`role` split/merge, `branches` n) | basis `structural`; ports `common`, `b1..bn` |
-| Battery limits / off-page | `boundaries` (`direction` in/out) | placeholders must say so in the note |
-| Process lines | `process_lines` | explicit `from`/`to` `{ref, port}`, mandatory `service`, supplied properties as `attributes` with provenance; `header: true` for main headers |
-| Operating conditions | `properties` of lines / `attributes` of equipment | value + unit + provenance |
-| Control requirements | `control_requirements` | `controller_required: true` **only** if the text states automatic control; give `measured_at_line`, `final_element`, `setpoint` only if stated |
-| Operating modes | `operating_modes` | requirements with `action` (isolate/discharge/operate/note) and port targets |
-| Everything missing/ambiguous/conflicting | `unresolved_requirements` | category `missing_value|ambiguity|conflict|selection|scope`, `affects`, a question |
-
-### Rules for you
-
-* **Explicit vs interpreted.** `basis: explicit` only for what the text states. Anything you had to infer to draw a connected
-  graph is `interpreted` with a `note` saying what and why. Needed-for-structure items are `structural`.
-* **Quotes are verbatim.** Table cells of one row may be joined with ` … `. `tests/test_provenance_quotes.py` checks this against the PDF.
-  Page numbers must be the page holding the quote.
-* **Never invent**: design pressures, relief sizing, safety thresholds, valve failure positions, material classes, nozzle sizes,
-  instrument ranges, pumps/valves the text does not mention. Put the gap in `unresolved_requirements`.
-* **Conflicts**: if two statements disagree, extract both faithfully, pick the physically consistent reading, mark it
-  `interpreted`, and add a `conflict` unresolved requirement naming the alternative.
-* **Reference drawings** (if supplied) are a cross-check, not a source. Record differences in `docs/reference_drawing_comparison.md`.
-* **Identifiers**: `id` is schematic (`eq.well_pump_a`), never the tag. No coordinates anywhere (schema rejects them).
-* Do not add instruments, controllers or generated valves to the source topology: enrichment does that.
-
-## 2. Write the project rules
-
-`projects/<name>/project_rules.yaml`: enable the rule types the document asks for (see `pid_workflow/enrich.py` handlers:
-`pump_auxiliaries`, `mode_isolation`, `header_instrumentation`, `control_valve_manifold`, `vessel_auxiliaries`, `control_loop`,
-`tagging`, `line_numbering`, `unresolved_summary`). Every rule cites `source: {page, section, quote}` and its parameters come from the text
-(service names, which headers, which classes). If the document asks for something no rule type does, add a small method to
-`Enricher` + handler entry + a test; do not special-case it elsewhere.
-
-## 3. Plant areas and the one-sheet drawing
-
-Optional `layout_hints.yaml` (see `projects/lpf_bsst/layout_hints.yaml`): which equipment/boundary/manifold ids (globs) form each
-plant area (`sheets`). Aim for 10–25 macro objects per area. Without hints each topology area is one plant area.
-The main deliverable is **one A0 sheet**: the areas become zones; `onesheet: rows:` fixes their arrangement so the sheet reads like
-the process (sources left/top, users right/bottom). Without it the arrangement is searched automatically. Connections between
-areas are routed as continuous pipes. The same areas also give the A3 review pack.
-
-## 3b. Review plan (keeps the engineer's work to a few decisions)
-
-`projects/<name>/review_plan.yaml` (see the LPF/BSST one) sorts every open point:
-* `holds`: questions that can change the drawing. For each, write a short `title` and `drawn_as` — what the drawing shows today —
-  so the reviewer only confirms or corrects. These become H1, H2 … markers and the hold list on the sheet.
-* `datasheet`: missing values that do not change the drawing (sizes, ranges, tags, nozzles…).
-* `notes`: the general notes printed on the sheet.
-Every open point must land in one of the two lists (anything forgotten becomes a hold automatically). Proposed additions are
-approved per rule (`pid review --approve-rule`), never object by object.
-
-## 4. Run and check
+## 1. Create the project
 
 ```bash
-python projects/<name>/extraction/extract_<name>.py     # writes source_topology.json
-pid run projects/<name> --rebuild
-pytest -q                                              # keep green
+pip install -e . 2>/dev/null || true          # once; otherwise use: python -m pid_workflow.cli ...
+pid new <name> "<path/to/spec.pdf>"            # lowercase name, e.g. pid new usine_nord cdc.pdf
 ```
-`pid run` must report validation PASS, round trip PASS (includes the DEXPI graphics checks), idempotent=True, 0 geometric problems
-on the one-sheet P&ID and the review pack. Then:
+This copies the document, splits it into `projects/<name>/source/pages/page_NNN.txt`, and writes `project.yaml`,
+`project_rules.yaml` (includes the good-practice rule pack), `review_plan.yaml`, `layout_hints.yaml` and
+`extraction/extract_<name>.py`. A scanned PDF without text must be OCR'd first (`pid check` says so).
 
-1. Open `reports/validation.md` — fix errors in the extraction (unknown classes, port reuse, wrong flow direction, open ports without an unresolved requirement).
-2. Look at `output/pid_one_sheet_A0.pdf` (`pdftoppm -r 45 -png` for the whole sheet, `-r 120 -x … -y … -W … -H …` to zoom) and
-   **look at every area**: overlaps, unreadable labels, lines through equipment, long detours between areas. Fix with `layout_hints.yaml`
-   (area membership, `onesheet.rows`) or the extraction — never with coordinates in the topology.
-   `output/pid_one_sheet_from_dexpi.svg` is pyDEXPI's own rendering of the XML: it must show the same drawing.
-3. Read `reports/unresolved_requirements.md` and `reports/assumptions.md`; each interpretation must be defensible from the text.
-4. Never edit `source_topology.json` by hand after the run; change the extraction script and rebuild.
-   `working_topology.json` is protected by a source hash; `pid run --rebuild` discards approvals.
+## 2. Read everything, then plan
 
-## 5. Report to the user
+Read **every page** file completely. Before writing code, list for yourself:
+* plant areas / sections; every equipment item (tag if given, type, duty data); parallel units and spares ("2 + 1");
+* every stream: where it comes from, where it goes, the fluid (service), stated sizes/temperatures/pressures;
+* valves, instruments and control actions the text itself names (with setpoints if stated);
+* operating modes; battery limits (what enters/leaves the scope);
+* what is missing, ambiguous or contradictory.
 
-State: what was extracted, the conflicts/ambiguities you resolved and how, the holds (from `reports/decision_register.md`), the rule
-approvals pending, and the known export limits (pyDEXPI 1.2.0 exports piping/instrumentation/graphics only through `proteus_ext.py` and
-`proteus_graphics.py`; XML not XSD-validated; see `reports/export_limitations.md`).
-Do not claim engineering approval: everything generated is `pending_review`.
+## 3. Write the extraction (`extraction/extract_<name>.py`) with the kit
 
-## Pitfalls seen on the first project
+```python
+q = s.src(page, "section title", "verbatim quote")                  # explicit fact; quote is checked against the page
+i = s.interp(page, "section", note="what was inferred and why", quote="…")   # interpretation needed to draw it
+t = s.structural(page, "section", note="why this tee/limit is needed", quote=q)  # structure only (header tees …)
+s.area("ar.x", "Name", q)
+s.equipment("eq.x", "Name", "<pyDEXPI class>", "ar.x", q, tag="P-101" or None, nozzles={"suction": "suction", "discharge": "discharge"},
+            attrs={"design_volume_flow_rate": s.val(150, "m3/h", q)}, symbol=None, lifecycle="new|existing|modified|future")
+s.bank("name", ["eq.p1", "eq.p2", "eq.p3"], inlet="eq.tank:out", outlet="mf.hdr:common", service="Fluid", src=q)  # parallel units
+s.manifold("mf.hdr", "Supply header", "split|merge", n_branches, "ar.x", q)      # ports: common, b1..bn
+s.line("eq.a:out", "eq.b:in", "Fluid", q, props={"nominal_diameter": s.val(250, None, q)}, header=False)  # flow direction!
+s.run("Fluid", q, "eq.a:out", "pc.v1", "eq.b:in")                              # through inline valves (ports in/out)
+s.valve("pc.v1", "Name", "isolation|control|check|…", "ar.x", q, kind="valve|check_valve|strainer|relief", tag=None)
+s.boundary("bc.x", "Name", "in|out", "Fluid", "ar.x", q)                         # battery limit, port "port"
+s.control("cr.x", "text", q, variable="temperature", measured_at_line="ln.012", final_element="pc.tv1",
+          setpoint=s.val(22, "°C", q), controller_required=True)                # True ONLY if the text states automatic control
+s.mode("mode.x", "Name", "text", q, [("isolate", ["pc.v1:in"], "text")])
+s.unresolved("ur.x", "missing_value|ambiguity|conflict|selection|scope", "what is open", ["affected ids"], q, question="…")
+s.save()
+```
+* **Classes**: any pyDEXPI class (`CentrifugalPump`, `Tank`, `PressureVessel`, `PlateHeatExchanger`, `WetCoolingTower`, `Compressor`,
+  `ProcessColumn`, `Filter` …; list: `python -c "from pid_workflow.catalog import equipment_classes as e; print(sorted(e()))"`).
+  No class fits → `CustomEquipment` with `symbol=` one of `heat_pump, box, pump, compressor, fan, hx, phx, tank, vessel, column, filter,
+  boiler, heater, mixer, cooling_tower, air_cooler, turbine, motor`.
+* **Nozzles**: only process connections (inlet/outlet/suction/discharge). Drains, vents, level taps and relief nozzles come from rules.
+* **Quotes are verbatim** (copy from the page file; table cells may be joined with " … "). A wrong quote stops the script with the right page.
+* **Never invent**: design pressures, relief sizing/set pressures, safety thresholds, fail positions, materials/piping classes, sizes, ranges,
+  equipment or valves the text does not mention. Put each gap in `s.unresolved`.
+* **Ambiguity**: draw the physically consistent reading as `interp(...)` and add an `ambiguity`/`conflict` open point naming the
+  alternative. If no reading is defensible (e.g. "position to be confirmed"), leave the item unconnected with an open point.
+* **Every line must make sense**: an outlet goes to an inlet, branches use manifolds (one line per port), loops close.
 
-* Parallel units ("3 pumps at 50 %") need a split and a merge manifold, one branch per unit, in port order.
-* A closed loop (tank → exchangers → tank) is fine; the layout draws the return around the loop.
-* A table row that gives per-unit values for a *pair* (e.g. a cascade) may contradict the prose; check connections against the prose.
-* Valves added by rules must not be reused by other rules for a different purpose (a pump's isolation valve is not a control valve's).
-* Statements like "à définir" / "TBD" are unresolved requirements, not values.
+Run it: `python projects/<name>/extraction/extract_<name>.py` until it writes `source_topology.json`.
+
+## 4. Project rules (`project_rules.yaml`)
+
+The good-practice pack (`policies/rule_packs/process_good_practice.yaml`) already proposes: pump strainer/isolation/check + PI,
+compressor isolation/check, exchanger isolation, vessel drain/vent/LT, relief on pressure vessels, control-valve stations,
+control loops from stated requirements, ISA tags, line numbers. Then:
+* For each requirement the document states (often a "Exigences P&ID" section), **override** the pack rule with the same `id`, cite
+  `source: {page, section, quote}` and adapt `params` to the text (e.g. PI vs PT, which classes).
+* **Switch off** what contradicts the document or does not apply: `- {id: control_valve.manifold, enabled: false}` (say why in a comment).
+* Fluid codes for line numbers: `overrides: {line_numbering: {codes: [{prefix: "Eau glacée", code: "EG"}]}}` when the document gives them.
+* Rule types: `equipment_template` (inline per nozzle role / open_ends / instruments, by DEXPI class incl. subclasses),
+  `control_valve_manifold`, `header_instrumentation`, `mode_isolation`, `control_loop`, `tagging`, `line_numbering`, `unresolved_summary`.
+  Something else needed → add a method to `Enricher` (pid_workflow/enrich.py) + a test.
+
+## 5. Plant areas and review plan
+
+* `layout_hints.yaml` (optional): `sheets` = plant areas (globs of equipment/manifold/boundary ids), `onesheet.rows` = arrangement
+  reading like the process (sources left/top, users right/bottom). Without it each topology area is a zone and the arrangement is searched.
+* `review_plan.yaml`: after the first `pid run`, put **every** open point either in `holds` (decision that can change the drawing:
+  `title`, `drawn_as` = what the drawing shows today, `answer: null`) or in `datasheet` (missing values only). Add general `notes`.
+
+## 6. Run, check, look
+
+```bash
+pid check projects/<name>        # quotes, structure, triage - each problem comes with its fix
+pid run projects/<name>          # rules -> validation -> layout -> A0 sheet -> DEXPI (+graphics) -> lists -> reports
+```
+Done means: extraction check 0 errors, validation PASS, round trip PASS, idempotent=True, **0 geometric problems** on the one-sheet P&ID.
+Then **look at the drawing**: `pdftoppm -r 45 -png output/pid_one_sheet_A0.pdf /tmp/s` (whole sheet) and zoom
+(`-r 120 -x … -y … -W 1600 -H 1000`) on every area. Fix crowding or detours with `layout_hints.yaml` (areas, rows) or the extraction,
+never with coordinates. Re-run after every change (`--rebuild` after changing the extraction).
+
+## 7. Report to the user
+
+Outputs: `output/pid_one_sheet_A0.pdf` (the P&ID), `output/pid_draft.proteus.xml` (DEXPI with graphics),
+`output/engineering_lists.xlsx`, `reports/decision_register.md`, `reports/summary.md`. Tell the user: what was extracted, the
+interpretations you made, the holds, what the rules added (all pending review), and the limits in `reports/export_limitations.md`.
+Never claim engineering approval.

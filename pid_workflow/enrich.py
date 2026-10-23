@@ -14,6 +14,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from .catalog import is_a
 from .policy import Policy, Rule
 from .schema import (
     Attr,
@@ -49,6 +50,10 @@ class EnrichResult:
     log: list[LogEntry] = field(default_factory=list)
 
 
+# rules that summarise or label the result run after the rules that add objects
+_PHASE = {"tagging": 2, "line_numbering": 2, "unresolved_summary": 3}
+
+
 def slug(obj_id: str) -> str:
     return obj_id.split(".", 1)[1] if "." in obj_id else obj_id
 
@@ -69,6 +74,7 @@ class Enricher:
             "vessel_auxiliaries": self.rule_vessel_auxiliaries,
             "control_loop": self.rule_control_loop,
             "line_numbering": self.rule_line_numbering,
+            "equipment_template": self.rule_equipment_template,
             "tagging": self.rule_tagging,
             "unresolved_summary": self.rule_unresolved_summary,
         }
@@ -82,7 +88,7 @@ class Enricher:
         self.inst = {i.id: i for i in self.t.instruments}
 
     def run(self) -> EnrichResult:
-        for rule in self.policy.rules:
+        for rule in sorted(self.policy.rules, key=lambda r: _PHASE.get(r.type, 1)):
             if not rule.enabled:
                 continue
             handler = self.handlers.get(rule.type)
@@ -98,7 +104,12 @@ class Enricher:
 
     def _expl(self, rule: Rule, text: str) -> str:
         src = rule.source or {}
-        cite = f"PDF p.{src.get('page')} §{src.get('section')}" if src.get("page") else "generic policy"
+        if src.get("page"):
+            cite = f"PDF p.{src.get('page')} §{src.get('section')}"
+        elif src.get("pack"):
+            cite = f"good-practice pack '{src['pack']}' – not stated in the specification"
+        else:
+            cite = "generic policy"
         return f"Project rule '{rule.id}' ({cite}): {text}"
 
     def _record_mod(self, rule: Rule, obj_id: str, field_: str, old: Any, new: Any, why: str) -> None:
@@ -334,6 +345,150 @@ class Enricher:
                                        eq.area)
             self.insert_inline(line, comp, rule, comp.provenance.explanation or "")
             self.note(rule.id, "added", comp.id, f"{label}: {fn} valve inserted by splitting {line.id}")
+
+    # ================================================== R: equipment template
+    def rule_equipment_template(self, rule: Rule) -> None:
+        """Declarative auxiliaries for every equipment of the given DEXPI classes (subclasses included).
+
+        params:
+          applies_to: [Pump]                      DEXPI class names; subclasses match (CentrifugalPump is a Pump)
+          include_existing: true                  existing equipment is populated but flagged 'verify'
+          inline: {suction: [{function: isolation, operation: manual}, {function: strainer}], ...}
+                                                  per nozzle role, ordered outward from the nozzle; every nozzle with the role
+          open_ends: [{nozzle_role: drain, function: drain}, {nozzle_role: relief, function: relief}]
+          instruments: [{isa_code: PI, variable: pressure, at: {line_of: discharge}},
+                        {isa_code: LT, variable: level, at: {nozzle_role: level_tap}}]
+        """
+        p = rule.params
+        bases = list(p.get("applies_to", []))
+        targets = [e for e in self.t.equipment if any(e.model_class == b or is_a(e.model_class, b) for b in bases)]
+        for e in targets:
+            if e.lifecycle == "future":
+                self.note(rule.id, "skipped", e.id, "future equipment: not populated")
+                continue
+            if e.lifecycle == "existing" and not p.get("include_existing", True):
+                continue
+            lab = self._label(e.id)
+            sl = slug(e.id)
+            verify = " Existing equipment: verify what is already installed before accepting." if e.lifecycle in {"existing", "modified"} else ""
+            for role, specs in (p.get("inline") or {}).items():
+                for nz in [n for n in e.nozzles if n.role == role]:
+                    if self.attached(e.id, nz.name) is None:
+                        self.note(rule.id, "blocked", e.id, f"{lab} {nz.name}: no line connected (prerequisite missing)")
+                        continue
+                    self._ensure_inline(rule, e, nz, specs, f"pc.gen.{sl}.{nz.name}_", f"{lab} {nz.name.replace('_', ' ')}", verify)
+            for oe in p.get("open_ends") or []:
+                self._ensure_open_end(rule, e, oe["nozzle_role"], oe.get("function", oe["nozzle_role"]), oe.get("operation", "unknown"), verify)
+            for ins in p.get("instruments") or []:
+                self._ensure_instrument(rule, e, ins, verify)
+
+    def _ensure_inline(self, rule: Rule, eq: Equipment, nz: Nozzle, specs: list[dict[str, Any]], id_prefix: str, label: str, verify: str) -> None:
+        outward = nz.role in {"discharge", "outlet"}
+        for idx, spec in enumerate(specs):
+            fn = spec["function"]
+            chain, _, _ = self.trace(eq.id, nz.name)
+            existing = self._find_function(chain, fn) if fn != "strainer" else next((c for c in chain if c.kind == "strainer"), None)
+            if existing is not None:
+                self._add_trigger(existing, eq.id)
+                self.note(rule.id, "reused", existing.id, f"{label}: existing {fn} {existing.tag or existing.id} reused")
+                continue
+            prev = [s_["function"] for s_ in specs[:idx]]
+            anchor = None
+            for c in chain:
+                if c.function in prev or (c.kind == "strainer" and "strainer" in prev):
+                    anchor = c
+            line = self.attached(eq.id, nz.name) if anchor is None else (
+                self.by_from.get((anchor.id, "out")) if outward else self.by_to.get((anchor.id, "in")))
+            if line is None:
+                self.note(rule.id, "blocked", eq.id, f"{label}: no line to split for the {fn}")
+                continue
+            cid = f"{id_prefix}{fn}"
+            if cid in self.rejected:
+                self.note(rule.id, "skipped", cid, f"{label}: {fn} was rejected by the reviewer")
+                continue
+            why = self._expl(rule, f"{label} needs {'a ' + fn + ' valve' if fn not in ('check', 'strainer') else ('a check valve' if fn == 'check' else 'a strainer')}."
+                             f"{verify} {'' if spec.get('model_class') else 'Technology not specified: generic representation.'}".strip())
+            if fn == "check":
+                comp = self.make_valve(cid, f"Check valve – {label}", fn, "unknown", rule, [eq.id], why, eq.area,
+                                       model_class=spec.get("model_class", "CheckValve"), technology="check", kind="check_valve")
+            elif fn == "strainer":
+                comp = self.make_valve(cid, f"Strainer – {label}", fn, "unknown", rule, [eq.id], why, eq.area,
+                                       model_class=spec.get("model_class", "Strainer"), technology="strainer", kind="strainer")
+            else:
+                comp = self.make_valve(cid, f"{fn.capitalize()} valve – {label}", fn, spec.get("operation", "unknown"), rule, [eq.id], why, eq.area,
+                                       model_class=spec.get("model_class"), technology=spec.get("technology"))
+            self.insert_inline(line, comp, rule, why)
+            self.note(rule.id, "added", comp.id, f"{label}: {fn} inserted by splitting {line.id}")
+
+    def _ensure_open_end(self, rule: Rule, e: Equipment, role: str, function: str, operation: str, verify: str) -> None:
+        lab = self._label(e.id)
+        sl = slug(e.id)
+        nz = self._ensure_nozzle(rule, e, role, role)
+        if self.attached(e.id, nz.name) is not None:
+            chain, _, _ = self.trace(e.id, nz.name)
+            if self._find_function(chain, function) is not None or (function == "relief" and any(c.kind == "relief" for c in chain)):
+                self.note(rule.id, "reused", e.id, f"{lab}: {function} already present")
+                return
+            self.note(rule.id, "blocked", e.id, f"{lab}: nozzle {nz.name} already connected; no {function} added")
+            return
+        vid = f"pc.gen.{sl}.{role}"
+        if vid in self.rejected:
+            self.note(rule.id, "skipped", vid, f"{lab}: {function} rejected by the reviewer")
+            return
+        service = self._service_near(e)
+        if function == "relief":
+            why = self._expl(rule, f"{lab} needs an overpressure protection device.{verify} Set pressure, sizing, type and discharge "
+                                   "destination are not given and are not assumed (see the relief open point).")
+            v = self.make_valve(vid, f"Relief device – {lab}", "relief", "unknown", rule, [e.id], why, e.area,
+                                model_class="CustomSafetyValveOrFitting", kind="relief", open_end="relief",
+                                extra={"type_name": {"value": "Relief device - type and sizing to be determined", "unit": None}})
+            line_service = f"Relief ({service})"
+        else:
+            kind_txt = {"drain": "low-point drain", "vent": "high-point vent"}.get(function, function)
+            why = self._expl(rule, f"{lab} needs a {kind_txt} valve.{verify} Technology not specified: generic valve.")
+            v = self.make_valve(vid, f"{function.capitalize()} valve – {lab}", function, operation, rule, [e.id], why, e.area,
+                                open_end=function if function in ("drain", "vent") else "drain")
+            line_service = f"{function.capitalize()} ({service})"
+        self.t.components.append(v)
+        self._reindex()
+        self.new_line(f"ln.gen.{sl}.{role}", (e.id, nz.name), (v.id, "in"), line_service, rule, [e.id], why, name=f"{function.capitalize()} of {lab}")
+        self.note(rule.id, "added", v.id, f"{lab}: {function} added")
+
+    def _ensure_instrument(self, rule: Rule, e: Equipment, ins: dict[str, Any], verify: str) -> None:
+        lab = self._label(e.id)
+        sl = slug(e.id)
+        at = ins.get("at", {})
+        code = ins["isa_code"]
+        if "nozzle_role" in at:
+            nz = self._ensure_nozzle(rule, e, at["nozzle_role"], at["nozzle_role"])
+            tgt = {"kind": "equipment", "ref": e.id, "port": nz.name}
+            iid = f"in.{sl}.{code.lower()}"
+        else:
+            nz = next((n for n in e.nozzles if n.role == at.get("line_of")), None)
+            line = self.attached(e.id, nz.name) if nz is not None else None
+            if line is None:
+                self.note(rule.id, "blocked", e.id, f"{lab}: no {at.get('line_of')} line for {code}")
+                return
+            # measure on the line beyond the inline auxiliaries
+            chain, _, _ = self.trace(e.id, nz.name)
+            if chain:
+                last = chain[-1]
+                line = (self.by_from.get((last.id, "out")) if nz.role in {"discharge", "outlet"} else self.by_to.get((last.id, "in"))) or line
+            tgt = {"kind": "line", "ref": logical(line)}
+            iid = f"in.{sl}.{nz.name}.{code.lower()}"
+        if any(i.target == tgt and i.isa_code == code for i in self.t.instruments):
+            self.note(rule.id, "reused", e.id, f"{lab}: {code} already present")
+            return
+        if iid in self.rejected:
+            self.note(rule.id, "skipped", iid, f"{lab}: {code} rejected by the reviewer")
+            return
+        fn = "indicator" if code.endswith("I") and not code.endswith("IC") else "transmitter"
+        self.t.instruments.append(Instrument.model_validate({
+            "id": iid, "name": f"{ins.get('name', code)} – {lab}", "isa_code": code, "measured_variable": ins.get("variable", ""),
+            "function": fn, "loop_id": None, "target": tgt, "tag": None, "tag_status": "none", "area": e.area, "attributes": {},
+            "provenance": generated_prov(rule.id, [e.id], self._expl(rule, f"{lab} needs a {code} ({ins.get('variable', '')}).{verify} Range not specified.")).model_dump(),
+        }))
+        self.note(rule.id, "added", iid, f"{lab}: {code} added")
 
     # ======================================================= R: mode isolation
     def rule_mode_isolation(self, rule: Rule) -> None:
@@ -682,6 +837,8 @@ class Enricher:
                 pref = tg["by_function"].get(fe.function or "", "XV")
                 n = take(pref, number_of(ctrl.tag) if pref == "PCV" else None)
                 self._set_tag(rule, fe, f"{pref}{sep}{n}", "control valve of a loop (loop number shared with its transmitter/controller)")
+        for i in sorted([i for i in self.t.instruments if i.tag is None], key=lambda x: x.id):  # indicators, switches...
+            self._set_tag(rule, i, f"{i.isa_code}{sep}{take(i.isa_code)}", "instrument")
         for c in sorted([c for c in self.t.components if c.kind != "manifold" and c.tag is None and c.function], key=lambda x: x.id):
             if c.provenance.origin == "source" and not (c.function == "control" and rule.params.get("tag_untagged_source_control_valves", True)):
                 continue
@@ -695,11 +852,24 @@ class Enricher:
         start = int(cfg.get("start", 101))
         sep = cfg.get("separator", "-")
 
+        auto: dict[str, str] = {}
+
         def code_of(service: str) -> str | None:
             for c in codes:
                 if service.lower().startswith(c["prefix"].lower()):
                     return c.get("code")
-            return None
+            if not cfg.get("auto_codes", True) or service.split(" ")[0].lower() in {"drain", "vent", "relief", "purge"}:
+                return None
+            if service not in auto:  # initials of the service name (Chilled water -> CW), made unique
+                words = [w for w in re.findall(r"[A-Za-zÀ-ÿ]+", service) if len(w) > 2 or w.isupper()]
+                base = "".join(w[0] for w in words[:2]).upper() or "PL"
+                code, k = base, 1
+                taken = {c.get("code") for c in codes} | set(auto.values())
+                while code in taken:
+                    k += 1
+                    code = f"{base}{k}"
+                auto[service] = code
+            return auto[service]
 
         groups: dict[str, list[ProcessLine]] = {}
         for ln in self.t.process_lines:
@@ -773,6 +943,15 @@ class Enricher:
                 "description": "Measuring ranges and alarm/trip settings of the generated instruments are not specified and were not assumed.",
                 "affects": instr, "needed_for": "instrument datasheets", "status": "open",
                 "provenance": gen(instr, "instrument ranges are never invented"),
+            }))
+        reliefs = sorted(c.id for c in self.t.components if c.kind == "relief")
+        if reliefs:
+            self._upsert_unresolved(Unresolved.model_validate({
+                "id": "ur.gen.relief", "category": "missing_value",
+                "description": "Relief devices: set pressure, relieving case and capacity, type and discharge destination are not specified "
+                               "and were not assumed. The devices are drawn as placeholders until the relief study is done.",
+                "affects": reliefs, "needed_for": "relief study / PSV datasheets", "status": "open",
+                "provenance": gen(reliefs, "relief sizing and set pressures are never invented"),
             }))
         gen_nz = sorted(e.id for e in self.t.equipment if any(n.provenance and n.provenance.origin == "generated" for n in e.nozzles))
         if gen_nz:

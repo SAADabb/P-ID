@@ -191,7 +191,11 @@ class Exporter:
         for k, a in c.attributes.items():
             custom.append(_attr(k, _fmt(a)))
         custom += _prov_attrs(c)
-        kw: dict[str, Any] = {"nodes": [pc.PipingNode(), pc.PipingNode()], "pipingComponentName": c.tag, "customAttributes": custom}
+        kw: dict[str, Any] = {"nodes": [pc.PipingNode(), pc.PipingNode()], "customAttributes": custom}
+        if "pipingComponentName" in cls.model_fields:
+            kw["pipingComponentName"] = c.tag
+        elif c.tag:  # safety valves / fittings have no tag field in DEXPI 1.3: keep the tag as a custom attribute
+            custom.append(_attr("Tag", c.tag))
         if c.model_class.startswith("Custom"):
             kw["typeName"] = (c.attributes["type_name"].value if "type_name" in c.attributes else c.name) or "Valve"
         self.rep.bump(f"valve:{c.model_class}")
@@ -559,7 +563,8 @@ class Exporter:
             "Line-number labels sit on their PipingNetworkSegment, which pyDEXPI 1.2 does not read back.",
             "LifeCyclePhase, Service, provenance, review status, tag status and schematic nozzle names are written as custom string attributes; "
             "rendering future equipment as dashed lines depends on the target template reading LifeCyclePhase=\"Future\".",
-            "Heat pumps, fermenters and the retained steam exchangers have no dedicated pyDEXPI class and are exported as CustomEquipment / CustomHeatExchanger / CustomCompressor.",
+            "Equipment without a dedicated pyDEXPI class (e.g. heat pumps, packaged units) is exported as a Custom* class (CustomEquipment, "
+            "CustomHeatExchanger …) with its name as typeName; its drawing symbol is chosen by the extraction (symbol=).",
             "Valves of unspecified technology use CustomOperatedValve with a 'technology to be selected' typeName; no specific valve type is chosen. "
             "Manual/automated actuation is a custom attribute because DEXPI 'operation' only classifies continuous/intermittent operation.",
             "An n-branch manifold is exported as a chain of n-1 PipeTee items; the manifold identity is kept in the TopologyId/TeeIndex attributes.",
@@ -568,6 +573,8 @@ class Exporter:
             "Battery limits are pipe off-page connectors without connectorReference (they lead off the plant, not to another sheet). "
             "The one-sheet drawing needs no inter-sheet connectors.",
             "Control valves carry no failAction, instruments no ranges, and the controller is a ProcessControlFunction without tuning data (not specified).",
+            "Safety valves (SafetyValveOrFitting) have no tag attribute in DEXPI 1.3; their proposed tag is written as the custom attribute 'Tag'. "
+            "Set pressures (setPressureHigh) stay empty: relief sizing is never invented.",
             "Segment nominal diameter is exported only when the source gives a single DN; ranges and minima are text attributes.",
             "The Proteus XML schema (XSD) is not available offline, so the file is not schema-validated; it is proven to load with pyDEXPI's own parser and "
             "its graph is compared with the topology (see the round-trip report). Validate it in the target CAD tool before relying on it.",

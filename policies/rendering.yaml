@@ -1,18 +1,22 @@
 # Review-PDF styling (generic).  Colours are matched on the service prefix of a line.
 # The exported DEXPI file carries only the Service attribute; the target CAD template decides
-# its own colours (spec §5) - these are for the human review PDF only.
-service_colors:
-  - {prefix: "Steam",                 color: "#2b2b2b", label: "Steam"}
-  - {prefix: "Flash steam",           color: "#6b6b6b", label: "Flash steam"}
-  - {prefix: "Hot water RCUA",        color: "#d4561a", label: "Hot water RCUA 85/105"}
-  - {prefix: "Hot water",             color: "#c0262d", label: "Hot water process 90/70"}
-  - {prefix: "Internal loop",         color: "#a0522d", label: "Internal loop PAC 2A/2B"}
-  - {prefix: "Cooling water",         color: "#0a8f8f", label: "Cooling water 20/31"}
-  - {prefix: "Well water",            color: "#1f5fbf", label: "Well water"}
-  - {prefix: "Treated make-up",       color: "#2e8b57", label: "Treated make-up water"}
-  - {prefix: "Process fluid",         color: "#7d3c98", label: "Process fluid (LPF tanks)"}
+# its own colours - these are for the human-readable PDF only.
+service_colors:          # exact service prefixes (a project may give its own file via project.yaml: rendering)
   - {prefix: "Drain",                 color: "#707070", label: "Drain"}
   - {prefix: "Vent",                  color: "#707070", label: "Vent"}
+  - {prefix: "Relief",                color: "#707070", label: "Relief"}
+# Any other service: matched by keyword (any language), then a fixed palette.
+keyword_colors:
+  - {any: ["drain", "vidange", "vent", "évent", "purge", "relief", "soupape", "eaux usées", "waste"], color: "#707070"}
+  - {any: ["glacée", "glacee", "chilled", "froid", "brine", "glycol"], color: "#1f5fbf"}
+  - {any: ["condensation", "cooling", "refroidissement", "tour"],      color: "#0a8f8f"}
+  - {any: ["steam", "vapeur", "condensat"],                            color: "#2b2b2b"}
+  - {any: ["chaude", "hot", "ecs", "heating", "chauffage"],            color: "#c0262d"}
+  - {any: ["adoucie", "softened", "make-up", "appoint", "potable", "ville", "city", "treated"], color: "#2e8b57"}
+  - {any: ["air"],                                                     color: "#5b6ee1"}
+  - {any: ["gas", "gaz", "fuel"],                                      color: "#b8860b"}
+  - {any: ["process", "produit", "product"],                           color: "#7d3c98"}
+palette: ["#1f5fbf", "#0a8f8f", "#c0262d", "#7d3c98", "#2e8b57", "#d4561a", "#a0522d", "#b8860b", "#5b6ee1", "#2b2b2b"]
 default_color: "#444444"
 proposed_color: "#e07b00"   # additions pending review
 future_dash: [4, 3]

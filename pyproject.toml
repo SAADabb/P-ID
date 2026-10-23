@@ -10,6 +10,8 @@ dependencies = [
   "reportlab>=4.0",
   "networkx>=3.0",
   "lxml>=5.0",
+  "openpyxl>=3.1",
+  "pypdf>=4.0",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +26,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["pid_workflow*"]
+
+[tool.setuptools.package-data]
+pid_workflow = ["templates/*.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

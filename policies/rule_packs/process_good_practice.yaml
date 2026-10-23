@@ -1,0 +1,86 @@
+# Generic P&ID good practice (ISO 10628 / ISA 5.1 / common EPC P&ID conventions such as PIP PIC001).
+#
+# Include it from a project with `include: [process_good_practice]` in project_rules.yaml.
+# Every object these rules add is a PROPOSAL (pending_review) and its explanation says
+# "good-practice pack – not stated in the specification".  When the specification itself asks
+# for the same thing, override the rule in project_rules.yaml with the same id and cite the page.
+# Switch off what does not fit the plant: `- {id: pump.auxiliaries, enabled: false}`.
+#
+# What is never added here: sizes, set pressures, ranges, fail positions, materials (never invented),
+# and equipment the specification does not mention.
+rules:
+  - id: pump.auxiliaries
+    type: equipment_template
+    params:
+      applies_to: [Pump]                     # all pumps (centrifugal, rotary, reciprocating ...)
+      inline:
+        suction:   [{function: strainer}, {function: isolation, operation: manual}]      # outward from the nozzle
+        discharge: [{function: check}, {function: isolation, operation: manual}]
+      instruments:
+        - {isa_code: PI, variable: pressure, name: Discharge pressure indicator, at: {line_of: discharge}}
+
+  - id: compressor.auxiliaries
+    type: equipment_template
+    params:
+      applies_to: [Compressor, Blower]
+      inline:
+        suction:   [{function: isolation, operation: manual}]
+        inlet:     [{function: isolation, operation: manual}]
+        discharge: [{function: check}, {function: isolation, operation: manual}]
+        outlet:    [{function: check}, {function: isolation, operation: manual}]
+      instruments:
+        - {isa_code: PI, variable: pressure, name: Discharge pressure indicator, at: {line_of: discharge}}
+
+  - id: exchanger.isolation
+    type: equipment_template
+    params:
+      applies_to: [HeatExchanger, CoolingTower, AirCoolingSystem]
+      include_existing: true
+      inline:
+        inlet:  [{function: isolation, operation: manual}]
+        outlet: [{function: isolation, operation: manual}]
+
+  - id: vessel.auxiliaries
+    type: equipment_template
+    params:
+      applies_to: [Vessel, Tank, Separator]
+      include_existing: true
+      open_ends:
+        - {nozzle_role: drain, function: drain}
+        - {nozzle_role: vent, function: vent}
+      instruments:
+        - {isa_code: LT, variable: level, name: Level transmitter, at: {nozzle_role: level_tap}}
+
+  - id: pressure_vessel.relief
+    type: equipment_template
+    params:
+      applies_to: [PressureVessel, Boiler, SteamGenerator]
+      open_ends:
+        - {nozzle_role: relief, function: relief}
+
+  - id: control_valve.manifold
+    type: control_valve_manifold
+    params:
+      applies_to_function: control
+      upstream_isolation: {function: isolation, operation: manual}
+      downstream_isolation: {function: isolation, operation: manual}
+      purge: {function: purge, operation: manual}
+      bypass_valve: {function: bypass, model_class: GlobeValve, operation: manual}
+
+  - id: control_loop.from_requirement
+    type: control_loop
+    params:
+      controller_code: {pressure: PIC, temperature: TIC, level: LIC, flow: FIC}
+
+  - id: tagging.isa
+    type: tagging
+    params:
+      tag_untagged_source_control_valves: true
+
+  - id: lines.numbering
+    type: line_numbering
+    params: {}
+
+  - id: unresolved.generated
+    type: unresolved_summary
+    params: {}

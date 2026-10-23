@@ -45,6 +45,12 @@ tagging:
     XV: 201
     NRV: 251
     PCV: 501
+    PSV: 601
+    STR: 701
+    PI: 151
+    TI: 351
+    LI: 451
+    FT: 801
   by_function:       # component function -> tag prefix
     isolation: XV
     bypass: XV
@@ -53,22 +59,27 @@ tagging:
     purge: XV
     check: NRV
     control: PCV
+    relief: PSV
+    strainer: STR
   notes:
     NRV: "ISA 5.1 defines no check-valve letter code; 'NRV' is a placeholder convention to be confirmed."
+    STR: "Strainers have no ISA 5.1 letter code; 'STR' is a placeholder convention to be confirmed."
 
 line_numbering:          # proposed line numbers: <code>-<sequence>; size and piping class are never invented
   separator: "-"
   start: 101
-  codes:                 # first matching service prefix wins; services without a code are not numbered
-    - {prefix: "Steam 8 bar",     code: "HS"}
-    - {prefix: "Steam 4 bar",     code: "MS"}
-    - {prefix: "Steam 1 bar",     code: "LS"}
-    - {prefix: "Flash steam",     code: "FS"}
-    - {prefix: "Steam",           code: "ST"}
-    - {prefix: "Hot water RCUA",  code: "HR"}
-    - {prefix: "Hot water",       code: "HW"}
-    - {prefix: "Internal loop",   code: "IL"}
-    - {prefix: "Cooling water",   code: "CW"}
-    - {prefix: "Well water",      code: "WW"}
-    - {prefix: "Treated make-up", code: "TW"}
-    - {prefix: "Process fluid",   code: "PF"}
+  auto_codes: true       # services without a listed code get the initials of their name (Chilled water -> CW)
+  codes:                 # first matching service prefix wins; projects override the list (overrides: line_numbering: codes)
+    - {prefix: "Steam",             code: "ST"}
+    - {prefix: "Condensate",        code: "CD"}
+    - {prefix: "Cooling water",     code: "CW"}
+    - {prefix: "Chilled water",     code: "CHW"}
+    - {prefix: "Hot water",         code: "HW"}
+    - {prefix: "Process water",     code: "PW"}
+    - {prefix: "Demineralised",     code: "DW"}
+    - {prefix: "Compressed air",    code: "CA"}
+    - {prefix: "Instrument air",    code: "IA"}
+    - {prefix: "Nitrogen",          code: "N"}
+    - {prefix: "Natural gas",       code: "NG"}
+    - {prefix: "Fuel oil",          code: "FO"}
+    - {prefix: "Process",           code: "P"}

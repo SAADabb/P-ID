@@ -23,6 +23,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
+from .catalog import SYMBOL_DIMS, equipment_symbol
 from .schema import Boundary, Component, Equipment, Instrument, ProcessLine, Topology, is_pending, logical
 
 SYM_W = 30.0      # width reserved per inline valve
@@ -34,19 +35,6 @@ LABEL_H = 30.0    # label band under an equipment symbol
 LANE_GAP = 16.0
 MAX_ROW_W = 1290.0  # sheets wider than this are folded into rows
 PAGE_W, PAGE_H = 1100.0, 560.0  # usable drawing area of an A3 sheet, used to pick the best arrangement
-
-# ---------------------------------------------------------------------------- symbols
-_DIMS: dict[str, tuple[float, float]] = {
-    "CentrifugalPump": (38, 38),
-    "PlateHeatExchanger": (50, 78),
-    "CustomHeatExchanger": (54, 74),
-    "Tank": (72, 100),
-    "Vessel": (58, 104),
-    "CustomCompressor": (56, 64),
-    "Boiler": (84, 74),
-    "CustomEquipment": (112, 56),
-}
-
 
 @dataclass
 class MNode:
@@ -146,17 +134,12 @@ def _slots(n: int, h: float, span_max: float = 30.0) -> list[float]:
 
 
 def make_equipment_node(e: Equipment, sheet: str) -> MNode:
-    w, h = _DIMS.get(e.model_class, (112, 56))
-    if e.model_class == "CustomEquipment":
-        n = e.name or ""
-        if "heat pump" in n.lower():
-            w, h, sym = 148, 92, "heatpump"
-        else:
-            sym = "box"
-            w = 124 if "ermenter" in n else 112
-    else:
-        sym = {"CentrifugalPump": "pump", "PlateHeatExchanger": "phx", "CustomHeatExchanger": "hx", "Tank": "tank", "Vessel": "vessel",
-               "CustomCompressor": "compressor", "Boiler": "boiler"}[e.model_class]
+    sym = equipment_symbol(e.model_class, e.symbol)
+    w, h = SYMBOL_DIMS.get(sym, (112, 56))
+    if sym == "heat_pump":
+        sym = "heatpump"
+    elif sym == "box":
+        w = max(112.0, min(150.0, 40 + 3.2 * len(e.name or "")))
     tag, name = _label_of(e)
     node = MNode(id=e.id, kind="equipment", obj=e, sheet=sheet, w=w, h=h,
                  label_h=0.0 if sym in ("tank", "vessel") else (LABEL_H if sym not in ("box", "heatpump") else (LABEL_H - 8 if sym == "box" else 14)),
@@ -169,16 +152,17 @@ def make_equipment_node(e: Equipment, sheet: str) -> MNode:
             by_side["R"].append(nz.name)
         elif nz.role == "vent":
             by_side["T"].append(nz.name)
+        elif nz.role == "relief":
+            by_side["T2"].append(nz.name)
         elif nz.role == "drain":
             by_side["B"].append(nz.name)
         else:  # level_tap etc.: instrument connection on the left-top
             by_side["L2"].append(nz.name)
     for side in ("L", "R"):
         names = by_side.get(side, [])
-        if sym == "heatpump":
-            offs = {"evap_in": -26, "evap_out": -26, "cond_in": 26, "cond_out": 26}
+        if sym == "heatpump":  # evaporator half on top, condenser half below
             for nm in names:
-                node.ports[nm] = (side, offs.get(nm, 0.0))
+                node.ports[nm] = (side, -26.0 if "evap" in nm else (26.0 if "cond" in nm else 0.0))
         elif sym in ("phx", "hx") and len(names) > 1:
             offs = _slots(len(names), h, 34)
             for nm, off in zip(names, offs):
@@ -189,6 +173,8 @@ def make_equipment_node(e: Equipment, sheet: str) -> MNode:
                 node.ports[nm] = (side, off)
     for nm in by_side.get("T", []):
         node.ports[nm] = ("T", 0.0)
+    for nm in by_side.get("T2", []):  # relief device on top, beside the vent
+        node.ports[nm] = ("T", w * 0.3 if by_side.get("T") else 0.0)
     for nm in by_side.get("B", []):
         node.ports[nm] = ("B", 0.0)
     for nm in by_side.get("L2", []):
@@ -899,8 +885,13 @@ def _layout_component(sheet_id: str, title: str, nodes: dict[str, MNode], edges:
         else:
             lane = top - 26 - k_top * LANE_GAP
             k_top += 1
-        x1 = xa + 22 + (k_bot + k_top) * 3
-        x2 = xb - 22 - (k_bot + k_top) * 3
+        # leave / enter beside the whole column of the node, not just beside the node
+        col_a = [m for m in nodes.values() if m.kind not in ("dummy", "terminal") and abs(m.x - a.x) < 1.0]
+        col_b = [m for m in nodes.values() if m.kind not in ("dummy", "terminal") and abs(m.x - b.x) < 1.0]
+        ra = max([xa] + [m.x + m.w / 2 for m in col_a])
+        lb = min([xb] + [m.x - m.w / 2 for m in col_b])
+        x1 = ra + 22 + (k_bot + k_top) * 3
+        x2 = lb - 22 - (k_bot + k_top) * 3
         e.path = _simplify([(xa, ya), (x1, ya), (x1, lane), (x2, lane), (x2, yb), (xb, yb)])
         # one-sheet zones: a connection to a zone on the other side leaves / enters along the lane
         room = len(e.chain) * SYM_W

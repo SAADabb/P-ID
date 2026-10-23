@@ -72,7 +72,7 @@ def build_register(topo: Topology, plan: dict[str, Any]) -> Register:
     open_urs = {u.id: u for u in topo.unresolved_requirements if u.status == "open"}
     planned = {h["ur"]: h for h in plan.get("holds", []) if h.get("ur") in open_urs}
     datasheet_ids = [x for x in plan.get("datasheet", []) if x in open_urs]
-    if plan:
+    if plan.get("holds") or plan.get("datasheet"):
         rest = [u for u in open_urs if u not in planned and u not in datasheet_ids]
         # anything the plan forgot is a hold: never silently dropped
         hold_ids = list(planned) + rest

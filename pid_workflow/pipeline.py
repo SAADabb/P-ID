@@ -140,6 +140,7 @@ class RunResult:
     register: Register | None = None
     sheet_scale: float = 0.0
     graphics: dict[str, int] | None = None
+    extraction_check: list[tuple[str, str, str]] | None = None
 
 
 def run_all(project: str | Path, rebuild: bool = False, render: bool = True) -> RunResult:
@@ -177,6 +178,12 @@ def run_all(project: str | Path, rebuild: bool = False, render: bool = True) -> 
         }
         scales = render_review_pdf(topo, dl, proj.pdf_path, proj.p("rendering"), facts)
     write_xlsx(topo, reg, proj.lists_path)
+    from .scaffold import check_project
+
+    ext = check_project(proj.root)
+    (proj.reports / "extraction_check.md").write_text(
+        "# Extraction check\n\nVerbatim quotes, structure and open-point triage of the extraction (`pid check`).\n\n"
+        + ("\n".join(f"- **{l}** {w} — fix: {f}" for l, w, f in ext) if ext else "No problems.") + "\n", encoding="utf-8")
     (proj.reports / "decision_register.md").write_text(register_md(reg, topo), encoding="utf-8")
     # reports
     rep = proj.reports
@@ -198,4 +205,4 @@ def run_all(project: str | Path, rebuild: bool = False, render: bool = True) -> 
         "Enrichment idempotent": "yes" if idem else "NO",
     }
     (rep / "summary.md").write_text(R.summary_md(topo, val, rt, qa, facts_tbl), encoding="utf-8")
-    return RunResult(topo, enr, val, exp, rt, dl, qa, scales, idem, os_, sheet_qa, reg, drawing.scale, gstats)
+    return RunResult(topo, enr, val, exp, rt, dl, qa, scales, idem, os_, sheet_qa, reg, drawing.scale, gstats, ext)
