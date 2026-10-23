@@ -55,14 +55,27 @@ Capture, each with page + section + a **verbatim quote**:
 
 `projects/<name>/project_rules.yaml`: enable the rule types the document asks for (see `pid_workflow/enrich.py` handlers:
 `pump_auxiliaries`, `mode_isolation`, `header_instrumentation`, `control_valve_manifold`, `vessel_auxiliaries`, `control_loop`,
-`tagging`, `unresolved_summary`). Every rule cites `source: {page, section, quote}` and its parameters come from the text
+`tagging`, `line_numbering`, `unresolved_summary`). Every rule cites `source: {page, section, quote}` and its parameters come from the text
 (service names, which headers, which classes). If the document asks for something no rule type does, add a small method to
 `Enricher` + handler entry + a test; do not special-case it elsewhere.
 
-## 3. Sheets
+## 3. Plant areas and the one-sheet drawing
 
-Optional `layout_hints.yaml` (see `projects/lpf_bsst/layout_hints.yaml`): which equipment/boundary/manifold ids (globs) go on which sheet.
-Aim for 10–25 macro objects per sheet. Without hints each area becomes one sheet.
+Optional `layout_hints.yaml` (see `projects/lpf_bsst/layout_hints.yaml`): which equipment/boundary/manifold ids (globs) form each
+plant area (`sheets`). Aim for 10–25 macro objects per area. Without hints each topology area is one plant area.
+The main deliverable is **one A0 sheet**: the areas become zones; `onesheet: rows:` fixes their arrangement so the sheet reads like
+the process (sources left/top, users right/bottom). Without it the arrangement is searched automatically. Connections between
+areas are routed as continuous pipes. The same areas also give the A3 review pack.
+
+## 3b. Review plan (keeps the engineer's work to a few decisions)
+
+`projects/<name>/review_plan.yaml` (see the LPF/BSST one) sorts every open point:
+* `holds`: questions that can change the drawing. For each, write a short `title` and `drawn_as` — what the drawing shows today —
+  so the reviewer only confirms or corrects. These become H1, H2 … markers and the hold list on the sheet.
+* `datasheet`: missing values that do not change the drawing (sizes, ranges, tags, nozzles…).
+* `notes`: the general notes printed on the sheet.
+Every open point must land in one of the two lists (anything forgotten becomes a hold automatically). Proposed additions are
+approved per rule (`pid review --approve-rule`), never object by object.
 
 ## 4. Run and check
 
@@ -71,19 +84,23 @@ python projects/<name>/extraction/extract_<name>.py     # writes source_topology
 pid run projects/<name> --rebuild
 pytest -q                                              # keep green
 ```
-`pid run` must report validation PASS, round trip PASS, idempotent=True, 0 layout problems. Then:
+`pid run` must report validation PASS, round trip PASS (includes the DEXPI graphics checks), idempotent=True, 0 geometric problems
+on the one-sheet P&ID and the review pack. Then:
 
 1. Open `reports/validation.md` — fix errors in the extraction (unknown classes, port reuse, wrong flow direction, open ports without an unresolved requirement).
-2. Look at `output/pid_review_draft.pdf` (render pages with `pdftoppm -r 80 -png`) and **look at every sheet**: overlaps, unreadable
-   labels, lines through equipment. Adjust `layout_hints.yaml` or the extraction (e.g. split a crowded area), not the topology with coordinates.
+2. Look at `output/pid_one_sheet_A0.pdf` (`pdftoppm -r 45 -png` for the whole sheet, `-r 120 -x … -y … -W … -H …` to zoom) and
+   **look at every area**: overlaps, unreadable labels, lines through equipment, long detours between areas. Fix with `layout_hints.yaml`
+   (area membership, `onesheet.rows`) or the extraction — never with coordinates in the topology.
+   `output/pid_one_sheet_from_dexpi.svg` is pyDEXPI's own rendering of the XML: it must show the same drawing.
 3. Read `reports/unresolved_requirements.md` and `reports/assumptions.md`; each interpretation must be defensible from the text.
 4. Never edit `source_topology.json` by hand after the run; change the extraction script and rebuild.
    `working_topology.json` is protected by a source hash; `pid run --rebuild` discards approvals.
 
 ## 5. Report to the user
 
-State: what was extracted, the conflicts/ambiguities you resolved and how, the open points, what is pending review, and the known
-export limits (pyDEXPI 1.2.0 exports piping/instrumentation only through `proteus_ext.py`; XML not XSD-validated).
+State: what was extracted, the conflicts/ambiguities you resolved and how, the holds (from `reports/decision_register.md`), the rule
+approvals pending, and the known export limits (pyDEXPI 1.2.0 exports piping/instrumentation/graphics only through `proteus_ext.py` and
+`proteus_graphics.py`; XML not XSD-validated; see `reports/export_limitations.md`).
 Do not claim engineering approval: everything generated is `pending_review`.
 
 ## Pitfalls seen on the first project

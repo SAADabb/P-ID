@@ -4,9 +4,11 @@ A reusable workflow that turns a written engineering specification into
 
 1. a **traceable topology** of the source facts (`source_topology.json`),
 2. an **enriched topology** with clearly marked proposals (`working_topology.json`),
-3. a **review PDF** — cover, overview, one drawing sheet per area, review tables,
-4. a **DEXPI Proteus XML** file built with [pyDEXPI](https://github.com/process-intelligence-research/pyDEXPI),
-5. **reports** on checks, assumptions, open points and export limitations.
+3. **the P&ID on one A0 sheet** — plant areas, ISO 10628 / ISA 5.1 symbols, line numbers, legend, notes, hold list, title block,
+4. a **DEXPI Proteus XML** file built with [pyDEXPI](https://github.com/process-intelligence-research/pyDEXPI) that carries the model
+   *and the same drawing* (Drawing, ShapeCatalogue, symbol positions, labels, routed pipe coordinates),
+5. a **decision register** and **engineering lists** (equipment, line, valve, instrument lists) so the review is a handful of decisions,
+6. **reports** on checks, assumptions, open points and export limitations, plus an A3 review pack per area.
 
 The first project is `projects/lpf_bsst`, built from *“Cahier des Charges P&ID Consolidé.pdf”*
 (Décarbonation énergétique LPF & BSST, 3 pages). How the result compares with the reference drawing that accompanied the brief:
@@ -23,9 +25,9 @@ The first project is `projects/lpf_bsst`, built from *“Cahier des Charges P&ID
 | **Extraction** — read the document, identify equipment, lines, instruments, connections, operating conditions, control requirements, modes | **the AI** (record: `projects/<p>/extraction/`) | `source_topology.json` (frozen) |
 | **Enrichment** — apply the project rules to complete the logical topology | deterministic rules, parameterised by the project | `working_topology.json` |
 | **Validation** — schema, identifiers, connections, flow directions, supported model classes | deterministic | `reports/validation.md` |
-| **Layout** — positions and routing (never stored in the topology) | deterministic | computed per sheet |
-| **Export** — pyDEXPI model → Proteus XML | deterministic | `output/pid_draft.proteus.xml` |
-| **Review** — PDF and a round-trip check that the XML keeps the graph | deterministic | `output/pid_review_draft.pdf`, `reports/roundtrip.md` |
+| **Layout** — plant-area zones, one-sheet arrangement, pipe routing (never stored in the topology) | deterministic | computed |
+| **Export** — pyDEXPI model + drawing → Proteus XML | deterministic | `output/pid_draft.proteus.xml` |
+| **Review** — A0 P&ID, decision register, lists; round-trip check of model *and* graphics | deterministic | `output/pid_one_sheet_A0.pdf`, `reports/decision_register.md`, `output/engineering_lists.xlsx` |
 
 The AI does the extraction and the engineering reasoning (which facts are explicit, which are interpretations, what is missing);
 Python does everything structural.
@@ -34,9 +36,9 @@ Python does everything structural.
 
 ```bash
 pip install -e ".[dev]"            # pydexpi, pydantic, reportlab, lxml, networkx, pyyaml
-pid run projects/lpf_bsst          # enrich → validate → export → verify → lay out → PDF → reports
+pid run projects/lpf_bsst          # enrich → validate → lay out → draw → export (model + graphics) → verify → lists → reports
                                    # (set SOURCE_DATE_EPOCH for a byte-reproducible XML)
-pytest                             # 42 tests, including a second, unrelated project
+python -m pytest -q                # 55 tests, including a second, unrelated project
 ```
 
 Outputs of the LPF/BSST project:
@@ -45,17 +47,33 @@ Outputs of the LPF/BSST project:
 projects/lpf_bsst/
   source_topology.json             unchanged snapshot of what was read from the PDF (page + section on every object)
   working_topology.json            source + proposed additions (rule, triggers, explanation, status)
-  output/pid_review_draft.pdf      the drawings
-  output/pid_draft.proteus.xml     DEXPI Proteus XML
+  output/pid_one_sheet_A0.pdf      THE P&ID: one A0 sheet
+  output/pid_draft.proteus.xml     DEXPI Proteus XML: model + the same drawing as DEXPI graphics
+  output/pid_one_sheet_from_dexpi.svg   pyDEXPI's own rendering of that XML (independent proof the graphics are in it)
+  output/engineering_lists.xlsx    equipment / line / valve / instrument lists, holds, rule approvals, datasheet data
+  reports/decision_register.md     the decisions the engineer has to make
+  output/pid_review_draft.pdf      A3 review pack: one sheet per area + provenance tables
   reports/summary.md               start here
 ```
 
-### Reading the PDF
+### Reading the drawing
 
+* Eight **plant areas** (dashed frames) arranged like the process: water side on top (well water → cooling loop → heat pumps →
+  hot water), steam side below, LPF tanks under the hot-water area that feeds them. Pipes between areas are drawn through —
+  no off-page connectors.
 * Black = from the specification. **Orange = proposed** by a project rule, waiting for approval. Dashed grey = future equipment.
-* Red numbered dots = **open points**; the same numbers are listed on each sheet and in the tables at the end.
-* Lines are coloured by service; every valve/instrument tag on an orange item is a *proposed* ISA 5.1 tag.
-* Sheets are connected by off-page references (`from Sh.2`, `to Sh.4`); page 2 shows which sheets exchange which services.
+* Red hexagons **H1 … H14 = holds**: decisions needed before issue, listed on the right with what the drawing shows today.
+* Lines are coloured by service and carry a proposed **line number** (`CW-115`, `HS-101` … service code + sequence; DN only where the
+  specification gives it). Valve and instrument tags on orange items are proposed ISA 5.1 tags.
+* Right-hand column: legend, general notes, hold list, data to complete on datasheets, revision block, title block.
+
+### Minimal engineering intervention
+
+The review is reduced to what only an engineer can decide (`reports/decision_register.md`):
+
+1. **14 holds** — each states what is drawn today; answer by setting `answer:` in `projects/lpf_bsst/review_plan.yaml`.
+2. **8 rule approvals** — one decision per rule instead of 181 objects: `pid review projects/lpf_bsst --approve-rule pump.auxiliaries`.
+3. **10 datasheet items** — values that do not change the drawing (sizes, ranges, nozzle data), collected for the datasheets.
 
 ### Reviewing proposals
 
@@ -79,8 +97,14 @@ pid_workflow/
   enrich.py          idempotent rule engine (pump auxiliaries, mode isolation, header instrumentation,
                      control-valve manifold, vessel auxiliaries, control loops, ISA tagging, unresolved summary)
   validate.py        structural validation
-  layout.py          layered layout, row folding, orthogonal routing, instrument placement, geometric QA
-  render_pdf.py      ReportLab drawings and tables
+  layout.py          layered layout of one plant area, orthogonal routing, instrument placement, geometric QA
+  onesheet.py        areas → zones on one sheet: terminals on the facing side, row arrangement, A* pipe router with rip-up
+  graphics.py        canvas recorder: the drawing is recorded once as primitives
+  render_onesheet.py the A0 sheet (grid, areas, symbols, legend, notes, holds, title block) → PDF
+  proteus_graphics.py  the same primitives → Proteus Drawing / ShapeCatalogue / positions / labels / centre lines; pyDEXPI check
+  decisions.py       holds, rule approvals, datasheet items (review_plan.yaml) → decision register
+  lists.py           equipment / line / valve / instrument lists (xlsx)
+  render_pdf.py      A3 review pack: per-area sheets and tables
   export_dexpi.py    topology → pyDEXPI model
   proteus_ext.py     Proteus XML writer for piping + instrumentation (plugs into pyDEXPI's exporter framework)
   roundtrip.py       re-reads the XML with lxml and with pyDEXPI and compares it with the topology
@@ -117,6 +141,7 @@ components are reused; applying the rules twice changes nothing. In the LPF/BSST
 | `vessel.auxiliaries` | drain, vent and LT on tanks and vessels (flagged “verify” for existing ones) |
 | `control_loop.from_requirement` | measurement → controller → final element **only** when the source states an automatic control action with a setpoint (the boiler back-up PCV at 7.5 bar eff.); a transmitter alone never creates a controller |
 | `tagging.isa` | unique proposed ISA 5.1 tags; the PT, PIC and PCV of a loop share their loop number |
+| `lines.numbering` | one proposed line number per logical line (`<service code>-<sequence>`); size and piping class are never invented |
 
 Valves whose technology the source does not give use the explicitly marked generic class (`CustomOperatedValve`,
 “technology to be selected”); the choice is listed in `ur.gen.valve_technology`, never made silently.
@@ -127,7 +152,9 @@ Valves whose technology the source does not give use the explicitly marked gener
 2. Have the AI read it into `source_topology.json` (see `extraction/extract_lpf_bsst.py` for the shape; every object needs page/section).
    Record unknowns as `unresolved_requirements`, stated control actions as `control_requirements`, modes as `operating_modes`.
 3. Write `project_rules.yaml`: enable the rule types the document asks for, parameterise them, cite the section.
-4. Optionally add `layout_hints.yaml` (sheet organisation). Without it every area becomes one sheet.
+4. Optionally add `layout_hints.yaml` (plant areas and their arrangement on the sheet) and `review_plan.yaml`
+   (holds with what is drawn today, datasheet items, notes). Without them every topology area is a plant area, the
+   arrangement is searched, and every non-trivial open point is a hold.
 5. `pid run projects/<name>`. `tests/test_review_and_pipeline.py::test_the_workflow_is_reusable_for_another_specification` shows a complete second project.
 
 New rule types are small methods on `Enricher` registered in `Enricher.handlers`.
@@ -142,9 +169,11 @@ The extraction step is still done by the agent, not by `pid run`.
 * **pyDEXPI 1.2.0 exports only equipment, nozzles and metadata to Proteus XML.** Piping and instrumentation are written by
   `proteus_ext.py`, which follows the structure pyDEXPI's *parser* reads; the file is re-loaded with pyDEXPI to prove it parses.
   pyDEXPI's loader also ignores custom attributes and segment-end node indices, so those are verified directly in the XML.
-* The XML carries no graphics (no Proteus drawing/shape catalogue); symbols and routing exist only in the PDF. Future equipment
-  carries `LifeCyclePhase="Future"` so a CAD template can render it dashed.
+* Graphics are written as Proteus primitives (PolyLine, Circle, Text); fills other than on circles are not representable, nozzles and
+  the short pipes between header tees carry no graphics, and pyDEXPI does not read back the line-number labels on segments
+  (they are in the file). Future equipment also carries `LifeCyclePhase="Future"`.
 * Heat pumps, fermenters and the retained steam exchangers have no dedicated pyDEXPI class (`CustomEquipment` / `CustomHeatExchanger`).
-* The layout is automatic and checked for overlaps, but it is a draft layout, not a drafting-office drawing.
+* The layout is automatic and checked for overlaps; the A0 sheet is drawn at scale 0.84 of the designed symbol size (smallest text
+  ≈ 2 mm). It is a draft for review, not a drafting-office drawing.
 * The reading of the specification contains interpretations (see `reports/assumptions.md`) and conflicts inside the document
   (`reports/unresolved_requirements.md`); they need an engineer's yes/no.

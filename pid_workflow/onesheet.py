@@ -338,8 +338,6 @@ def _route_links(os_: OneSheet, zmap: dict[str, Zone]) -> None:
         for i in range(a[0] - 2, b[0] + 3):
             for j in range(a[1] - 2, b[1] + 3):
                 near.add((i, j))
-    used_h: set[tuple[int, int]] = set()  # cells carrying a horizontal run
-    used_v: set[tuple[int, int]] = set()
     nodes = os_.layout.nodes
 
     def endpoints(lk: Link) -> tuple[tuple[float, float], tuple[int, int], tuple[float, float], tuple[int, int]]:
@@ -351,32 +349,58 @@ def _route_links(os_: OneSheet, zmap: dict[str, Zone]) -> None:
         g = (g[0] - (2 if lk.s_in == "L" else -2), g[1])
         return (to.x, to.y), s, (ti.x, ti.y), g
 
-    order = sorted(os_.links, key=lambda lk: (_est(endpoints(lk)), lk.edge.id))
-    for lk in order:
-        p_out, s, p_in, g = endpoints(lk)
-        d0 = 0 if lk.s_out == "R" else 2
-        d1 = 0 if lk.s_in == "L" else 2
-        cells = _astar(s, g, nx, ny, blocked, near, used_h, used_v, d0=d0, d1=d1)
-        if cells is None:  # congested: allow sharing a track at a high price rather than dropping the pipe
-            cells = _astar(s, g, nx, ny, blocked, near, used_h, used_v, share=60.0, d0=d0, d1=d1)
-            if cells is not None:
-                os_.warnings.append(f"route of {lk.edge.id} shares a track")
-        if cells is None:
-            os_.warnings.append(f"no route for {lk.edge.id} ({lk.a} -> {lk.b})")
-            continue
-        for k, c in enumerate(cells):
-            prev = cells[k - 1] if k else None
-            nxt = cells[k + 1] if k + 1 < len(cells) else None
-            horiz = any(q is not None and q[1] == c[1] for q in (prev, nxt))
-            vert = any(q is not None and q[0] == c[0] for q in (prev, nxt))
-            if horiz:
-                used_h.add(c)
-            if vert:
-                used_v.add(c)
-        pts = [pt(c) for c in cells]
-        # leave the terminal horizontally and arrive horizontally, at the terminals' own heights
-        path = [p_out, (pts[0][0], p_out[1])] + pts + [(pts[-1][0], p_in[1]), p_in]
-        os_.routes[lk.edge.id] = _clean(path)
+    ends = {lk.edge.id: endpoints(lk) for lk in os_.links}
+    # the stub cells where a pipe leaves / enters a zone belong to that pipe only
+    reserved: dict[tuple[int, int], str] = {}
+    for lid, (_, s, _, g) in ends.items():
+        for c in (s, g):
+            reserved.setdefault(c, lid)
+
+    def route_all(order: list[Link]) -> tuple[dict[str, list[tuple[float, float]]], list[str], list[str]]:
+        used_h: set[tuple[int, int]] = set()  # cells carrying a horizontal run
+        used_v: set[tuple[int, int]] = set()
+        routes: dict[str, list[tuple[float, float]]] = {}
+        warn: list[str] = []
+        shared: list[str] = []
+        for lk in order:
+            p_out, s, p_in, g = ends[lk.edge.id]
+            d0 = 0 if lk.s_out == "R" else 2
+            d1 = 0 if lk.s_in == "L" else 2
+            forbid = blocked | {c for c, owner in reserved.items() if owner != lk.edge.id}
+            cells = _astar(s, g, nx, ny, forbid, near, used_h, used_v, d0=d0, d1=d1)
+            if cells is None:  # congested: allow sharing a track at a high price rather than dropping the pipe
+                cells = _astar(s, g, nx, ny, forbid, near, used_h, used_v, share=60.0, d0=d0, d1=d1)
+                if cells is not None:
+                    shared.append(lk.edge.id)
+                    warn.append(f"route of {lk.edge.id} shares a track")
+            if cells is None:
+                warn.append(f"no route for {lk.edge.id} ({lk.a} -> {lk.b})")
+                shared.append(lk.edge.id)
+                continue
+            for k, c in enumerate(cells):
+                prev = cells[k - 1] if k else None
+                nxt = cells[k + 1] if k + 1 < len(cells) else None
+                if any(q is not None and q[1] == c[1] for q in (prev, nxt)):
+                    used_h.add(c)
+                if any(q is not None and q[0] == c[0] for q in (prev, nxt)):
+                    used_v.add(c)
+            pts = [pt(c) for c in cells]
+            # leave the terminal horizontally and arrive horizontally, at the terminals' own heights
+            routes[lk.edge.id] = _clean([p_out, (pts[0][0], p_out[1])] + pts + [(pts[-1][0], p_in[1]), p_in])
+        return routes, warn, shared
+
+    order = sorted(os_.links, key=lambda lk: (_est(ends[lk.edge.id]), lk.edge.id))
+    best = None
+    for _ in range(6):  # rip up and re-route: congested pipes go first next time
+        routes, warn, shared = route_all(order)
+        if best is None or len(shared) < len(best[2]):
+            best = (routes, warn, shared)
+        if not shared:
+            break
+        first = [lk for lk in order if lk.edge.id in shared]
+        order = first + [lk for lk in order if lk.edge.id not in shared]
+    os_.routes, w = best[0], best[1]
+    os_.warnings += w
 
 
 def _est(ep: tuple[tuple[float, float], tuple[int, int], tuple[float, float], tuple[int, int]]) -> float:

@@ -923,8 +923,8 @@ def _layout_component(sheet_id: str, title: str, nodes: dict[str, MNode], edges:
         if a is None:
             continue
         side, rel = a.ports.get(st.src[1], ("B", 0.0))
-        if a.kind == "manifold":
-            px, py = a.x, a.port_y.get(st.src[1], a.y)
+        if a.kind == "manifold":  # hangs from the bottom end of the bar
+            px, py = a.x, a.span[1]
             side = "B"
         else:
             px, py = a.port_xy(st.src[1])

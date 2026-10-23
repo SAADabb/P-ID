@@ -166,7 +166,8 @@ def _zones(rec: Recorder, os_: OneSheet) -> None:
         rec.setDash(10, 4)
         rec.rect(x0, y0, x1 - x0, y1 - y0)
         rec.restoreState()
-        txt(rec, x0 + 10, y0 + 20, f"AREA {i} – {z.spec.title.upper()}", 11, FONT_B, "l", colors.HexColor("#4a4a4a"))
+        title = wrap(f"AREA {i} – {z.spec.title.upper()}", x1 - x0 - 20, 11, FONT_B, 1)[0]
+        txt(rec, x0 + 10, y0 + 20, title, 11, FONT_B, "l", colors.HexColor("#4a4a4a"))
 
 
 def _content(rec: Recorder, painter: SheetPainter, os_: OneSheet, st: Style, content: SheetContent) -> None:

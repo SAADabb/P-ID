@@ -552,8 +552,11 @@ class Exporter:
     def _limitations(self) -> None:
         r = self.rep
         r.limitations = [
-            "No graphical information is exported (no Proteus Drawing / ShapeCatalogue): symbols, coordinates and routing exist only in the review PDF. "
-            "The target CAD tool must lay the drawing out itself.",
+            "Graphics: the one-sheet A0 drawing is written as a Proteus Drawing (border, title block, notes as DrawingBorder; area frames, holds and "
+            "signal lines as drawing Labels), a ShapeCatalogue (symbols as PolyLine/Circle/Text primitives; fills are not representable except on "
+            "circles), ComponentName + Position on equipment, valves, instruments and battery limits, and Presentation + Coordinates on every CenterLine. "
+            "Nozzles and the pipes between the tees of a header carry no graphics (the header bar is a Label of its first tee). "
+            "Line-number labels sit on their PipingNetworkSegment, which pyDEXPI 1.2 does not read back.",
             "LifeCyclePhase, Service, provenance, review status, tag status and schematic nozzle names are written as custom string attributes; "
             "rendering future equipment as dashed lines depends on the target template reading LifeCyclePhase=\"Future\".",
             "Heat pumps, fermenters and the retained steam exchangers have no dedicated pyDEXPI class and are exported as CustomEquipment / CustomHeatExchanger / CustomCompressor.",
@@ -562,7 +565,8 @@ class Exporter:
             "An n-branch manifold is exported as a chain of n-1 PipeTee items; the manifold identity is kept in the TopologyId/TeeIndex attributes.",
             "Nozzle numbers (Nozzle.subTagName) are left empty because the source gives none; nozzle sizes and ratings are not exported (never invented).",
             "Only flow rate, heat flow rate and tank volume are mapped to native typed attributes; all other quantities are exported as text custom attributes.",
-            "Pipe off-page connectors carry no connectorReference: the sheet references of the review PDF are not part of the model.",
+            "Battery limits are pipe off-page connectors without connectorReference (they lead off the plant, not to another sheet). "
+            "The one-sheet drawing needs no inter-sheet connectors.",
             "Control valves carry no failAction, instruments no ranges, and the controller is a ProcessControlFunction without tuning data (not specified).",
             "Segment nominal diameter is exported only when the source gives a single DN; ranges and minima are text attributes.",
             "The Proteus XML schema (XSD) is not available offline, so the file is not schema-validated; it is proven to load with pyDEXPI's own parser and "
